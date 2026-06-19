@@ -1,0 +1,62 @@
+@import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@1,6..72,200..800&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--bone);
+  --color-foreground: var(--carbon);
+  --color-border: var(--taupe);
+  --color-input: var(--taupe);
+  --color-ring: var(--clay);
+  
+  --color-primary: var(--carbon);
+  --color-primary-foreground: var(--bone);
+  
+  --color-secondary: var(--graphite);
+  --color-secondary-foreground: var(--bone);
+  
+  --color-muted: var(--bone);
+  --color-muted-foreground: var(--graphite);
+  
+  --color-accent: var(--clay);
+  --color-accent-foreground: var(--bone);
+  
+  --color-destructive: var(--clay);
+  --color-destructive-foreground: var(--bone);
+
+  --font-sans: 'Space Mono', monospace;
+  --font-serif: 'Newsreader', serif;
+  --font-mono: 'Space Mono', monospace;
+  
+  --radius-sm: 2px;
+  --radius-md: 2px;
+  --radius-lg: 2px;
+  --radius-xl: 2px;
+}
+
+:root {
+  --bone: #F2EFE9;
+  --carbon: #16140F;
+  --clay: #C53A1E;
+  --graphite: #5C5547;
+  --taupe: #8C8473;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring;
+    border-radius: 0;
+  }
+  
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+
+  ::selection {
+    @apply bg-accent text-accent-foreground;
+  }
+}
