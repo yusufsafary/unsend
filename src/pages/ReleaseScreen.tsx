@@ -213,7 +213,7 @@ export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose 
     tx.fillStyle = mode==='fire' ? '#1a0800' : mode==='mirror' ? '#060c10' : mode==='slowmo' ? '#08050f' : '#F2EFE9';
     tx.fillRect(0, 0, 640, 800);
     for (let i=0;i<2000;i++) {
-      tx.fillStyle=`rgba(${mode==='fire'?'255,150,50':'mode'==='mirror'?'100,180,220':'200,200,200'},${Math.random()*0.025})`;
+      tx.fillStyle=`rgba(${mode==='fire'?'255,150,50':mode==='mirror'?'100,180,220':'200,200,200'},${Math.random()*0.025})`;
       tx.fillRect(Math.random()*640, Math.random()*800, 1, 1);
     }
     const textColor = mode==='fire' ? '#FF9500' : mode==='mirror' ? '#D8EDF5' : mode==='slowmo' ? '#EDE8F5' : '#16140F';
@@ -365,7 +365,7 @@ export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose 
       oc.clearRect(0,0,W,H);
       for (const crack of userCracksRef.current) {
         if (crack.length<2) continue;
-        oc.beginPath(); oc.strokeStyle=`rgba(${mode==='fire'?'255,149,0':'mode'==='mirror'?'122,184,212':'197,58,30'},0.75)`;
+        oc.beginPath();
         const col=mode==='fire'?'255,149,0':mode==='mirror'?'122,184,212':mode==='slowmo'?'180,160,212':'197,58,30';
         oc.strokeStyle=`rgba(${col},0.8)`; oc.lineWidth=1.5; oc.shadowColor=`rgb(${col})`; oc.shadowBlur=7;
         oc.moveTo(crack[0][0],crack[0][1]);
