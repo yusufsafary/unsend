@@ -169,7 +169,7 @@ export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose 
     renderer.setSize(W, H);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(cfg.bgColor, 1);
-    container.insertBefore(renderer.domElement, overlay);
+    container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(cfg.bgColor, mode==='slowmo' ? 0.06 : 0.09);
