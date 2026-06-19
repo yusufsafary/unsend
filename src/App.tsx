@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { LoginScreen } from "./pages/LoginScreen";
 import { ComposeScreen } from "./pages/ComposeScreen";
 import { ReleaseScreen } from "./pages/ReleaseScreen";
@@ -8,17 +8,13 @@ function App() {
   const [count, setCount] = useState(0);
   const [view, setView] = useState<'login' | 'compose' | 'release'>('login');
   const [message, setMessage] = useState('');
+  const [chargeLevel, setChargeLevel] = useState(0);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('unsend_user');
     const savedCount = localStorage.getItem('unsend_count');
-    if (savedUser) {
-      setUser(savedUser);
-      setView('compose');
-    }
-    if (savedCount) {
-      setCount(parseInt(savedCount, 10));
-    }
+    if (savedUser) { setUser(savedUser); setView('compose'); }
+    if (savedCount) setCount(parseInt(savedCount, 10));
   }, []);
 
   const handleLogin = (username: string) => {
@@ -33,8 +29,9 @@ function App() {
     setView('login');
   };
 
-  const handleRelease = (msg: string) => {
+  const handleRelease = (msg: string, charge: number) => {
     setMessage(msg);
+    setChargeLevel(charge);
     setView('release');
   };
 
@@ -46,6 +43,7 @@ function App() {
 
   const handleCloseRelease = () => {
     setMessage('');
+    setChargeLevel(0);
     setView('compose');
   };
 
@@ -53,18 +51,19 @@ function App() {
     <>
       {view === 'login' && <LoginScreen onLogin={handleLogin} />}
       {view === 'compose' && user && (
-        <ComposeScreen 
-          username={user} 
-          count={count} 
-          onLogout={handleLogout} 
-          onRelease={handleRelease} 
+        <ComposeScreen
+          username={user}
+          count={count}
+          onLogout={handleLogout}
+          onRelease={handleRelease}
         />
       )}
       {view === 'release' && (
-        <ReleaseScreen 
-          message={message} 
-          onComplete={handleReleaseComplete} 
-          onClose={handleCloseRelease} 
+        <ReleaseScreen
+          message={message}
+          chargeLevel={chargeLevel}
+          onComplete={handleReleaseComplete}
+          onClose={handleCloseRelease}
         />
       )}
     </>
