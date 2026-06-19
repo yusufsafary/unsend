@@ -53,12 +53,13 @@ export function ComposeScreen({ username, count, selectedMode, onModeChange, onL
 
   // Show unlock toast when count hits thresholds
   useEffect(() => {
-    const mode = MODES.find(m => m.unlockAt === count);
-    if (mode && mode.unlockAt > 0) {
-      setUnlockToast(`${mode.icon} ${mode.label} mode unlocked`);
+    const found = MODES.find(m => m.unlockAt === count);
+    if (found && found.unlockAt > 0) {
+      setUnlockToast(`${found.icon} ${found.label} mode unlocked`);
       const t = setTimeout(() => setUnlockToast(null), 3200);
       return () => clearTimeout(t);
     }
+    return undefined;
   }, [count]);
 
   const stopCharging = useCallback(() => {
