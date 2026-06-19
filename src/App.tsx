@@ -3,18 +3,23 @@ import { LoginScreen } from "./pages/LoginScreen";
 import { ComposeScreen } from "./pages/ComposeScreen";
 import { ReleaseScreen } from "./pages/ReleaseScreen";
 
+export type ShatterMode = 'default' | 'fire' | 'mirror' | 'slowmo';
+
 function App() {
   const [user, setUser] = useState<string | null>(null);
   const [count, setCount] = useState(0);
   const [view, setView] = useState<'login' | 'compose' | 'release'>('login');
   const [message, setMessage] = useState('');
   const [chargeLevel, setChargeLevel] = useState(0);
+  const [selectedMode, setSelectedMode] = useState<ShatterMode>('default');
 
   useEffect(() => {
     const savedUser = localStorage.getItem('unsend_user');
     const savedCount = localStorage.getItem('unsend_count');
+    const savedMode = localStorage.getItem('unsend_mode') as ShatterMode | null;
     if (savedUser) { setUser(savedUser); setView('compose'); }
     if (savedCount) setCount(parseInt(savedCount, 10));
+    if (savedMode) setSelectedMode(savedMode);
   }, []);
 
   const handleLogin = (username: string) => {
@@ -33,6 +38,11 @@ function App() {
     setMessage(msg);
     setChargeLevel(charge);
     setView('release');
+  };
+
+  const handleModeChange = (mode: ShatterMode) => {
+    setSelectedMode(mode);
+    localStorage.setItem('unsend_mode', mode);
   };
 
   const handleReleaseComplete = () => {
@@ -54,6 +64,8 @@ function App() {
         <ComposeScreen
           username={user}
           count={count}
+          selectedMode={selectedMode}
+          onModeChange={handleModeChange}
           onLogout={handleLogout}
           onRelease={handleRelease}
         />
@@ -62,6 +74,7 @@ function App() {
         <ReleaseScreen
           message={message}
           chargeLevel={chargeLevel}
+          mode={selectedMode}
           onComplete={handleReleaseComplete}
           onClose={handleCloseRelease}
         />
