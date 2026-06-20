@@ -8,6 +8,7 @@ export type ShatterMode = 'default' | 'fire' | 'mirror' | 'slowmo';
 function App() {
   const [user, setUser] = useState<string | null>(null);
   const [count, setCount] = useState(0);
+  const [streak, setStreak] = useState(0);
   const [view, setView] = useState<'login' | 'compose' | 'release'>('login');
   const [message, setMessage] = useState('');
   const [chargeLevel, setChargeLevel] = useState(0);
@@ -17,9 +18,11 @@ function App() {
     const savedUser = localStorage.getItem('unsend_user');
     const savedCount = localStorage.getItem('unsend_count');
     const savedMode = localStorage.getItem('unsend_mode') as ShatterMode | null;
+    const savedStreak = localStorage.getItem('unsend_streak');
     if (savedUser) { setUser(savedUser); setView('compose'); }
     if (savedCount) setCount(parseInt(savedCount, 10));
     if (savedMode) setSelectedMode(savedMode);
+    if (savedStreak) setStreak(parseInt(savedStreak, 10));
   }, []);
 
   const handleLogin = (username: string) => {
@@ -49,6 +52,18 @@ function App() {
     const newCount = count + 1;
     setCount(newCount);
     localStorage.setItem('unsend_count', newCount.toString());
+
+    // Streak tracking
+    const today = new Date().toISOString().slice(0, 10);
+    const lastDate = localStorage.getItem('unsend_last_date');
+    const currentStreak = parseInt(localStorage.getItem('unsend_streak') || '0', 10);
+    if (lastDate !== today) {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const newStreak = lastDate === yesterday ? currentStreak + 1 : 1;
+      localStorage.setItem('unsend_streak', newStreak.toString());
+      localStorage.setItem('unsend_last_date', today);
+      setStreak(newStreak);
+    }
   };
 
   const handleCloseRelease = () => {
@@ -64,6 +79,7 @@ function App() {
         <ComposeScreen
           username={user}
           count={count}
+          streak={streak}
           selectedMode={selectedMode}
           onModeChange={handleModeChange}
           onLogout={handleLogout}
@@ -72,6 +88,7 @@ function App() {
       )}
       {view === 'release' && (
         <ReleaseScreen
+          releaseCount={count}
           message={message}
           chargeLevel={chargeLevel}
           mode={selectedMode}
