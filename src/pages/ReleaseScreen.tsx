@@ -9,6 +9,7 @@ interface ReleaseScreenProps {
   chargeLevel: number;
   mode: ShatterMode;
   bossZone?: Zone | null;
+  activeItemEffects?: string[];
   onComplete: () => void;
   onClose: () => void;
 }
@@ -158,7 +159,7 @@ interface FragData {
   col: number;          // column index for glitch
 }
 
-export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, bossZone, onComplete, onClose }: ReleaseScreenProps) {
+export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, bossZone, activeItemEffects = [], onComplete, onClose }: ReleaseScreenProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [stage, setStage] = useState<'drawing'|'cracking'|'falling'|'done'>('drawing');
@@ -174,9 +175,12 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, bossZo
     [cfg.closures]
   );
 
+  const isDoubleFrags = activeItemEffects.includes('double_frags');
+  const isVoid        = activeItemEffects.includes('void');
+
   const intensity = Math.max(chargeLevel, 10);
   const nFragBase = Math.round(28 + intensity * 0.22);
-  const nFrags = Math.round(nFragBase * cfg.fragMult);
+  const nFrags    = Math.min(Math.round(nFragBase * cfg.fragMult) * (isDoubleFrags ? 2 : 1), 120);
   const nParticles = Math.round(180 + intensity * 2.0);
   const shakeStr = (0.08 + intensity * 0.002) * (mode === 'slowmo' ? 0.4 : 1);
   const baseSpd = (0.6 + intensity * 0.02) * cfg.timeScale;
@@ -372,10 +376,11 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, bossZo
       if (mode === 'glitch') {
         const colDir = cx > 0 ? 1 : cx < -1 ? -1 : Math.random() > 0.5 ? 1 : -1;
         vx = colDir * (0.8 + rng() * 2.5);
-        vy = -(rng() * 1.5);
+        vy = isVoid ? (0.5 + rng() * 1.5) : -(rng() * 1.5);
       } else {
         vx = Math.cos(angle)*spd*(0.5+rng())+( rng()-0.5)*0.8;
-        vy = Math.sin(angle)*spd*0.3-(0.6+rng()*2.2)*(intensity/65);
+        const baseVy = Math.sin(angle)*spd*0.3-(0.6+rng()*2.2)*(intensity/65);
+        vy = isVoid ? Math.abs(baseVy) * 1.4 + rng() * 0.5 : baseVy;
       }
 
       // Vortex: angular velocity (spiral)
@@ -636,7 +641,8 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, bossZo
             f.vx = nvx; f.vy = nvy;
           }
 
-          f.vy-=dt*(5.5+intensity*0.04);
+          if (isVoid) { f.vy += dt * (4.0 + intensity * 0.03); }
+          else { f.vy -= dt * (5.5 + intensity * 0.04); }
           const burst=Math.max(0,1-ft*5)*0.25;
 
           let posX = f.cx+f.vx*ft+f.cx*burst;
@@ -771,7 +777,7 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, bossZo
       if(container.contains(renderer.domElement))container.removeChild(renderer.domElement);
       renderer.dispose(); msgTex.dispose();
     };
-  }, [message, chargeLevel, mode, intensity, nFrags, nParticles, shakeStr, baseSpd, CRACK_DUR, FALL_DUR, cfg, onComplete]);
+  }, [message, chargeLevel, mode, intensity, nFrags, nParticles, shakeStr, baseSpd, CRACK_DUR, FALL_DUR, cfg, isVoid, onComplete]);
 
   // Countdown timer — starts at 3, ticks down while in drawing phase
   useEffect(() => {
