@@ -4,6 +4,8 @@ import { ComposeScreen } from "./pages/ComposeScreen";
 import { ReleaseScreen } from "./pages/ReleaseScreen";
 import { StatsScreen } from "./pages/StatsScreen";
 import { MapScreen } from "./pages/MapScreen";
+import { AboutScreen } from "./pages/AboutScreen";
+import { HowToPlayScreen } from "./pages/HowToPlayScreen";
 import { Grain } from "./components/Grain";
 import { AchievementToast } from "./components/AchievementToast";
 import {
@@ -18,7 +20,7 @@ import {
 } from "./lib/adventure";
 
 export type ShatterMode = 'default' | 'fire' | 'mirror' | 'slowmo' | 'vortex' | 'glitch';
-type View = 'login' | 'compose' | 'release' | 'stats' | 'map';
+type View = 'login' | 'compose' | 'release' | 'stats' | 'map' | 'about' | 'howtoplay';
 
 function App() {
   const [user, setUser] = useState<string | null>(null);
@@ -39,8 +41,6 @@ function App() {
   const [pendingQuestTitles, setPendingQuestTitles] = useState<string[]>([]);
   const [showToast, setShowToast] = useState(false);
   const [dailyUsed, setDailyUsed] = useState(false);
-
-  // Boss state for current release
   const [bossForRelease, setBossForRelease] = useState<ReturnType<typeof getBossForCount>>(null);
 
   useEffect(() => {
@@ -67,11 +67,8 @@ function App() {
   };
 
   const handleRelease = (msg: string, charge: number, isRage: boolean, msgLength: number) => {
-    // Check if next release (count+1) is a boss encounter
     const nextCount = count + 1;
-    const boss = getBossForCount(nextCount);
-    setBossForRelease(boss);
-
+    setBossForRelease(getBossForCount(nextCount));
     setMessage(msg);
     setChargeLevel(charge);
     setIsRageOnRelease(isRage);
@@ -111,7 +108,6 @@ function App() {
     setCount(newCount);
     localStorage.setItem('unsend_count', newCount.toString());
 
-    // Streak tracking
     const today = new Date().toISOString().slice(0, 10);
     const lastDate   = localStorage.getItem('unsend_last_date');
     const currentSt  = parseInt(localStorage.getItem('unsend_streak') || '0', 10);
@@ -124,70 +120,55 @@ function App() {
       setStreak(newStreak);
     }
 
-    // Quest + boss resolution
     let questXP = 0;
     let completedQuestsList: Quest[] = [];
-    let newItemsFromQuests: string[] = [];
 
     setAdventureState(prev => {
-      // Check quest completions
       const active = getActiveQuests(prev.completedQuests, newCount);
       const completed = checkQuestCompletions(active, {
-        count: newCount,
-        streak: newStreak,
-        mode: selectedMode,
-        isRage: isRageOnRelease,
-        charge: chargeLevel,
-        isDaily: dailyUsed,
+        count: newCount, streak: newStreak, mode: selectedMode,
+        isRage: isRageOnRelease, charge: chargeLevel, isDaily: dailyUsed,
       });
       completedQuestsList = completed;
       questXP = completed.reduce((s, q) => s + q.reward.xp, 0);
       const questItems = completed.flatMap(q => q.reward.item ? [q.reward.item] : []);
-      newItemsFromQuests = questItems;
 
-      // Boss defeat reward
       const boss = getBossForCount(newCount);
       const bossDefeated = boss !== null && chargeLevel >= boss.bossRequiredCharge;
-      const bossXPBonus = bossDefeated ? 200 : 0;
-      questXP += bossXPBonus;
+      if (bossDefeated) questXP += 200;
 
       const bossItem = bossDefeated ? (() => {
         const bossItems = ['rage_crystal', 'charge_amplifier', 'echo_stone', 'void_shard'];
         return bossItems[Math.min(Math.floor(newCount / 5) - 1, bossItems.length - 1)];
       })() : null;
-      if (bossItem) newItemsFromQuests.push(bossItem);
+
+      const allNewItems = bossItem ? [...questItems, bossItem] : questItems;
 
       const next: AdventureState = {
         completedQuests: [...prev.completedQuests, ...completed.map(q => q.id)],
         bossesDefeated: bossDefeated ? [...prev.bossesDefeated, newCount] : prev.bossesDefeated,
-        inventory: addItemsToInventory(prev.inventory, newItemsFromQuests),
-        activeItemEffects: [], // consumed after release
+        inventory: addItemsToInventory(prev.inventory, allNewItems),
+        activeItemEffects: [],
       };
       saveAdventureState(next);
       return next;
     });
 
-    // XP / level / achievements
     setGameState(prev => {
       const isFullCharge   = chargeLevel >= 95;
       const isPerfectStorm = isFullCharge && isRageOnRelease;
       const wasDailyDone   = isDailyCompleted(prev);
-
       const now = Date.now();
       const withinWindow = (now - prev.lastReleaseTime) < 60000;
       const newCombo = withinWindow ? prev.comboCount + 1 : 1;
 
       const xpBase = calcXPGain({
-        chargeLevel,
-        messageLength,
-        streak: newStreak,
-        isRage: isRageOnRelease,
-        isFullCharge,
+        chargeLevel, messageLength, streak: newStreak,
+        isRage: isRageOnRelease, isFullCharge,
         isDailyComplete: dailyUsed && !wasDailyDone,
         comboCount: newCombo,
       });
       const xpGained = xpBase + questXP;
-
       const newXP    = prev.xp + xpGained;
       const newLevel = getLevelFromXP(newXP);
       const leveledUp = newLevel > prev.level;
@@ -200,14 +181,11 @@ function App() {
       }
 
       const next: GameState = {
-        ...prev,
-        xp: newXP,
-        level: newLevel,
+        ...prev, xp: newXP, level: newLevel,
         achievements: { ...prev.achievements },
         dailyChallengesCompleted: newDailyCompleted,
         lastDailyDate: newLastDailyDate,
-        comboCount: newCombo,
-        lastReleaseTime: now,
+        comboCount: newCombo, lastReleaseTime: now,
       };
 
       const newAchs = checkNewAchievements(next, {
@@ -246,16 +224,17 @@ function App() {
     setPendingQuestTitles([]);
   };
 
-  // Derived adventure data for compose screen
   const currentZone = getCurrentZone(selectedMode);
-  const isBossNext = (count + 1) > 0 && (count + 1) % 5 === 0;
+  const isBossNext  = (count + 1) > 0 && (count + 1) % 5 === 0;
   const nextBossZone = isBossNext ? getBossForCount(count + 1) : null;
   const activeQuestsList = getActiveQuests(adventureState.completedQuests, count);
 
   return (
     <>
       <Grain />
+
       {view === 'login' && <LoginScreen onLogin={handleLogin} />}
+
       {view === 'compose' && user && (
         <ComposeScreen
           username={user}
@@ -273,10 +252,13 @@ function App() {
           onRelease={handleRelease}
           onOpenStats={() => setView('stats')}
           onOpenMap={() => setView('map')}
+          onOpenAbout={() => setView('about')}
+          onOpenHowToPlay={() => setView('howtoplay')}
           onDailyUsed={() => setDailyUsed(true)}
           onUseItem={handleUseItem}
         />
       )}
+
       {view === 'release' && (
         <ReleaseScreen
           releaseCount={count}
@@ -288,26 +270,31 @@ function App() {
           onClose={handleCloseRelease}
         />
       )}
-      {view === 'stats' && (
+
+      {view === 'stats' && user && (
         <StatsScreen
           gameState={gameState}
+          adventureState={adventureState}
           count={count}
           streak={streak}
+          username={user}
           onClose={() => setView('compose')}
         />
       )}
+
       {view === 'map' && (
         <MapScreen
           count={count}
           selectedMode={selectedMode}
           adventureState={adventureState}
           onClose={() => setView('compose')}
-          onSelectZone={(mode) => {
-            handleModeChange(mode);
-            setView('compose');
-          }}
+          onSelectZone={(mode) => { handleModeChange(mode); setView('compose'); }}
         />
       )}
+
+      {view === 'about' && <AboutScreen onClose={() => setView('compose')} />}
+      {view === 'howtoplay' && <HowToPlayScreen onClose={() => setView('compose')} />}
+
       {showToast && view === 'compose' && (
         <AchievementToast
           achievementIds={pendingAchievements}

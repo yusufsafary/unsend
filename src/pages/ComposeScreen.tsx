@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Wordmark } from '../components/Wordmark';
 import { BossAlert } from '../components/BossAlert';
 import { ItemBar } from '../components/ItemBar';
+import { NavMenu } from '../components/NavMenu';
 import type { ShatterMode } from '../App';
 import { getXPProgress, getDailyPrompt, isDailyCompleted, type GameState } from '../lib/gameState';
 import { type AdventureState, type Zone, type Quest } from '../lib/adventure';
@@ -22,6 +23,8 @@ interface ComposeScreenProps {
   onRelease: (message: string, chargeLevel: number, isRage: boolean, messageLength: number) => void;
   onOpenStats: () => void;
   onOpenMap: () => void;
+  onOpenAbout: () => void;
+  onOpenHowToPlay: () => void;
   onDailyUsed: () => void;
   onUseItem: (itemId: string) => void;
 }
@@ -75,8 +78,9 @@ const MODES: { id: ShatterMode; label: string; icon: string; unlockAt: number; d
 export function ComposeScreen({
   username, count, streak, selectedMode, gameState, adventureState,
   currentZone, isBossNext, nextBossZone, activeQuests,
-  onModeChange, onLogout, onRelease, onOpenStats, onOpenMap, onDailyUsed, onUseItem,
+  onModeChange, onLogout, onRelease, onOpenStats, onOpenMap, onOpenAbout, onOpenHowToPlay, onDailyUsed, onUseItem,
 }: ComposeScreenProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [who, setWho] = useState('');
   const [message, setMessage] = useState('');
   const [charge, setCharge] = useState(0);
@@ -248,27 +252,18 @@ export function ComposeScreen({
           <span className="text-xs font-mono" style={{ color: count >= 10 ? '#C53A1E' : '#3a3020' }}>
             ×{count}
           </span>
-          <button onClick={onOpenMap}
-            className="text-xs font-mono uppercase tracking-widest transition-all"
-            style={{ color: '#5C5547' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#e8c89a'}
-            onMouseLeave={e => e.currentTarget.style.color = '#5C5547'}
-            title="World Map">
-            map
-          </button>
-          <button onClick={onOpenStats}
-            className="text-xs font-mono uppercase tracking-widest transition-all"
-            style={{ color: '#5C5547' }}
+          <span className="font-mono text-[9px] uppercase tracking-widest" style={{ color: '#3a3020' }}>
+            lv{gameState.level}
+          </span>
+          <button
+            onClick={() => setMenuOpen(true)}
+            className="font-mono text-lg leading-none transition-all"
+            style={{ color: '#5C5547', padding: '2px 4px' }}
             onMouseEnter={e => e.currentTarget.style.color = '#F2EFE9'}
-            onMouseLeave={e => e.currentTarget.style.color = '#5C5547'}>
-            lvl {gameState.level}
-          </button>
-          <button onClick={onLogout}
-            className="text-xs font-mono uppercase tracking-widest"
-            style={{ color: '#2a2418' }}
-            onMouseEnter={e => e.currentTarget.style.color = '#5C5547'}
-            onMouseLeave={e => e.currentTarget.style.color = '#2a2418'}>
-            ⏻
+            onMouseLeave={e => e.currentTarget.style.color = '#5C5547'}
+            title="Menu"
+          >
+            ≡
           </button>
         </div>
       </header>
@@ -549,6 +544,24 @@ export function ComposeScreen({
           )}
         </div>
       </main>
+
+      {/* Nav Menu overlay */}
+      {menuOpen && (
+        <NavMenu
+          username={username}
+          count={count}
+          level={gameState.level}
+          currentZone={currentZone}
+          onClose={() => setMenuOpen(false)}
+          onNavigate={(dest) => {
+            if (dest === 'map') onOpenMap();
+            else if (dest === 'stats') onOpenStats();
+            else if (dest === 'about') onOpenAbout();
+            else if (dest === 'howtoplay') onOpenHowToPlay();
+          }}
+          onLogout={onLogout}
+        />
+      )}
     </div>
   );
 }
