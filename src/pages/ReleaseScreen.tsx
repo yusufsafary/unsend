@@ -625,7 +625,7 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
           {drawHint && (
             <p className="font-mono text-xs tracking-widest uppercase text-center"
               style={{color:'rgba(140,132,115,0.7)'}}>
-              Draw cracks — or wait for auto-release
+              trace the fracture
             </p>
           )}
           <div className="flex gap-6 items-center">
@@ -646,7 +646,7 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
           {/* Countdown + Space hint */}
           <div className="flex items-center gap-3">
             <span className="font-mono text-xs" style={{color:'#2a2820'}}>
-              Space to release
+              space ↑
             </span>
             <span className="font-mono text-base tabular-nums"
               style={{color: countdown <= 1 ? modeAccent : '#3a3530',
@@ -662,7 +662,7 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
         <div className="absolute inset-x-0 bottom-12 z-20 flex justify-center">
           <span className="font-mono text-xs tracking-[0.4em] uppercase"
             style={{color:`rgba(${mode==='fire'?'255,149,0':mode==='mirror'?'122,184,212':mode==='slowmo'?'180,160,212':'197,58,30'},${0.5+intensity/200})`}}>
-            {intensity>70?'detonating':intensity>40?'releasing':'fading'}
+            {intensity>70?'shattering':intensity>40?'dissolving':'fading'}
           </span>
         </div>
       )}
@@ -674,53 +674,85 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
 
       {/* Closure */}
       {stage==='done' && (
-        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center px-8"
+        <div className="absolute inset-0 z-40 flex flex-col px-8"
           style={{background:`rgba(${parseInt(cfg.bgColor.toString(16).padStart(6,'0').slice(0,2),16)},${parseInt(cfg.bgColor.toString(16).padStart(6,'0').slice(2,4),16)},${parseInt(cfg.bgColor.toString(16).padStart(6,'0').slice(4,6),16)},0.97)`,
-            animation:'fadeInUp 0.7s cubic-bezier(0.16,1,0.3,1) forwards'}}>
+            animation:'fadeInUp 0.8s cubic-bezier(0.16,1,0.3,1) forwards'}}>
           <style>{`
-            @keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-            @keyframes pulseModeAccent{0%,100%{opacity:0.3}50%{opacity:0.9}}
+            @keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
+            @keyframes pulseModeAccent{0%,100%{opacity:0.2}50%{opacity:0.8}}
+            @keyframes slideInLine{from{width:0}to{width:100%}}
           `}</style>
-          <div style={{width:36,height:1,background:modeAccent,marginBottom:'2.5rem',animation:'pulseModeAccent 2s ease-in-out infinite'}} />
-          <h2 className="font-serif italic text-center leading-tight"
-            style={{fontSize:'clamp(2rem,8.5vw,3.8rem)',color:mode==='fire'?'#FF9500':mode==='mirror'?'#D8EDF5':mode==='slowmo'?'#EDE8F5':'#F2EFE9',
-              maxWidth:380,marginBottom:'1.2rem',letterSpacing:'-0.01em'}}>
-            {closureLine}
-          </h2>
-          {chargeLevel>60 && (
-            <p className="font-mono text-xs tracking-widest uppercase" style={{color:modeAccent,marginBottom:'2.5rem',opacity:0.6}}>
-              {chargeLevel>90?'— full release —':'— charged release —'}
+
+          {/* Top bar: issue number */}
+          <div className="flex justify-between items-center pt-6 pb-6"
+            style={{borderBottom:'1px solid #1a1815'}}>
+            <span className="font-mono text-[10px] tracking-[0.3em] uppercase" style={{color:'#2a2820'}}>
+              unsend.games
+            </span>
+            <span className="font-mono text-[10px] tracking-[0.2em]" style={{color:'#2a2820'}}>
+              no. {releaseCount + 1}
+            </span>
+          </div>
+
+          {/* Main closure — fills the space */}
+          <div className="flex-1 flex flex-col justify-center">
+            {/* Accent line */}
+            <div style={{height:1, background:modeAccent, marginBottom:'2rem',
+              animation:'slideInLine 0.9s 0.3s cubic-bezier(0.16,1,0.3,1) both', width:'100%'}} />
+
+            <h2 className="font-serif italic leading-[1.0]"
+              style={{fontSize:'clamp(2.4rem,10vw,4.2rem)',
+                color:mode==='fire'?'#FF9500':mode==='mirror'?'#D8EDF5':mode==='slowmo'?'#EDE8F5':'#F2EFE9',
+                letterSpacing:'-0.02em', marginBottom:'1.5rem'}}>
+              {closureLine}
+            </h2>
+
+            {chargeLevel>60 && (
+              <p className="font-mono text-[10px] tracking-[0.3em] uppercase"
+                style={{color:modeAccent, opacity:0.5, marginBottom:'0.5rem'}}>
+                {chargeLevel>90?'full release':'charged release'}
+              </p>
+            )}
+            <p className="font-mono text-[10px] tracking-[0.2em] uppercase"
+              style={{color:'#2a2820'}}>
+              {mode !== 'default' ? mode : 'classic'} · {Math.round(chargeLevel)}%
             </p>
-          )}
-          {chargeLevel<=60&&<div style={{marginBottom:'3rem'}}/>}
-          <div style={{width:'100%',maxWidth:300,height:1,background:'#1e1c18',marginBottom:'2.5rem'}}/>
-          <div style={{display:'flex',gap:'2rem',alignItems:'center',flexWrap:'wrap',justifyContent:'center'}}>
-            {(['Write another','Done for now'] as const).map((label,i)=>(
-              <button key={label}
-                onClick={i===0?onClose:()=>window.location.reload()}
-                className="font-mono text-xs uppercase tracking-widest transition-all"
-                style={{color:'#8C8473',paddingBottom:2,borderBottom:'1px solid transparent'}}
-                onMouseEnter={e=>{e.currentTarget.style.color='#F2EFE9';e.currentTarget.style.borderBottomColor='#F2EFE9';}}
-                onMouseLeave={e=>{e.currentTarget.style.color='#8C8473';e.currentTarget.style.borderBottomColor='transparent';}}
-                data-testid={i===0?'button-write-another':'button-done'}>
-                {label}
+          </div>
+
+          {/* Bottom actions */}
+          <div style={{borderTop:'1px solid #1a1815', paddingTop:'1.5rem', paddingBottom:'2.5rem'}}>
+            <div style={{display:'flex',gap:'2.5rem',alignItems:'center',flexWrap:'wrap'}}>
+              <button
+                onClick={onClose}
+                className="font-mono text-xs uppercase tracking-[0.2em] transition-all"
+                style={{color:'#F2EFE9',paddingBottom:2,borderBottom:'1px solid #F2EFE9'}}
+                data-testid="button-write-another">
+                again —
               </button>
-            ))}
-            <button
-              onClick={() => {
-                const modeTag = mode !== 'default' ? ` [${mode} mode]` : '';
-                const chargeTag = chargeLevel > 70 ? ` at ${Math.round(chargeLevel)}% intensity` : '';
-                const txt = `Unsent #${releaseCount + 1}${chargeTag}${modeTag} — unsend.games`;
-                navigator.clipboard.writeText(txt).then(() => {
-                  setCopied(true);
-                  setTimeout(() => setCopied(false), 2200);
-                }).catch(() => {});
-              }}
-              className="font-mono text-xs uppercase tracking-widest transition-all"
-              style={{color: copied ? modeAccent : '#5C5547', paddingBottom:2,
-                borderBottom: `1px solid ${copied ? modeAccent : 'transparent'}`}}>
-              {copied ? 'Copied ✓' : 'Share →'}
-            </button>
+              <button
+                onClick={()=>window.location.reload()}
+                className="font-mono text-xs uppercase tracking-[0.2em] transition-all"
+                style={{color:'#3a3530',paddingBottom:2,borderBottom:'1px solid transparent'}}
+                onMouseEnter={e=>{e.currentTarget.style.color='#8C8473';e.currentTarget.style.borderBottomColor='#8C8473';}}
+                onMouseLeave={e=>{e.currentTarget.style.color='#3a3530';e.currentTarget.style.borderBottomColor='transparent';}}
+                data-testid="button-done">
+                leave.
+              </button>
+              <button
+                onClick={() => {
+                  const modeTag = mode !== 'default' ? ` [${mode}]` : '';
+                  const txt = `no. ${releaseCount + 1}${modeTag} — unsend.games`;
+                  navigator.clipboard.writeText(txt).then(() => {
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2200);
+                  }).catch(() => {});
+                }}
+                className="font-mono text-xs uppercase tracking-[0.2em] transition-all"
+                style={{color: copied ? modeAccent : '#3a3530', paddingBottom:2,
+                  borderBottom: `1px solid ${copied ? modeAccent : 'transparent'}`}}>
+                {copied ? '✓ copied' : 'copy →'}
+              </button>
+            </div>
           </div>
         </div>
       )}
