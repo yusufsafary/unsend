@@ -5,10 +5,29 @@ import type { ShatterMode } from '../App';
 interface ComposeScreenProps {
   username: string;
   count: number;
+  streak: number;
   selectedMode: ShatterMode;
   onModeChange: (mode: ShatterMode) => void;
   onLogout: () => void;
   onRelease: (message: string, chargeLevel: number) => void;
+}
+
+function playTypeClick() {
+  try {
+    const ctx = new AudioContext();
+    const len = Math.floor(ctx.sampleRate * 0.007);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 4) * 0.06;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain(); g.gain.value = 1;
+    src.connect(g); g.connect(ctx.destination); src.start();
+    setTimeout(() => ctx.close(), 200);
+  } catch { /* silence */ }
+}
+
+function haptic(pattern: number | number[]) {
+  try { navigator.vibrate(pattern); } catch { /* no vibrate api */ }
 }
 
 function analyzeIntensity(text: string): number {
@@ -37,7 +56,7 @@ const MODES: { id: ShatterMode; label: string; icon: string; unlockAt: number; d
   { id: 'slowmo',  label: 'Slow-Mo',   icon: '◷', unlockAt: 10, desc: 'Cinematic 0.3× time',      color: '#b4a0d4' },
 ];
 
-export function ComposeScreen({ username, count, selectedMode, onModeChange, onLogout, onRelease }: ComposeScreenProps) {
+export function ComposeScreen({ username, count, streak, selectedMode, onModeChange, onLogout, onRelease }: ComposeScreenProps) {
   const [who, setWho] = useState('');
   const [message, setMessage] = useState('');
   const [charge, setCharge] = useState(0);
@@ -50,6 +69,10 @@ export function ComposeScreen({ username, count, selectedMode, onModeChange, onL
   const isEnabled = message.trim().length > 0;
   const textIntensity = analyzeIntensity(message);
   const chargeLabel = CHARGE_LABELS.slice().reverse().find(l => charge >= l.min) ?? CHARGE_LABELS[0];
+
+  // Rage mode: >60% uppercase of alphabetic chars
+  const alphaChars = message.replace(/[^a-zA-Z]/g, '');
+  const isRageMode = alphaChars.length > 8 && (message.match(/[A-Z]/g) || []).length / alphaChars.length > 0.6;
 
   // Show unlock toast when count hits thresholds
   useEffect(() => {
@@ -73,6 +96,8 @@ export function ComposeScreen({ username, count, selectedMode, onModeChange, onL
     const base = chargeRef.current;
     const final = Math.min(base + textIntensity, 100);
     setReleased(true);
+    // Shatter haptic — intensity-based
+    haptic(final > 80 ? [80, 30, 80, 30, 120] : final > 50 ? [60, 20, 80] : [40, 20, 60]);
     setTimeout(() => onRelease(message.trim(), Math.round(final)), 80);
   }, [isEnabled, released, stopCharging, textIntensity, message, onRelease]);
 
@@ -80,10 +105,14 @@ export function ComposeScreen({ username, count, selectedMode, onModeChange, onL
     if (!isEnabled || released) return;
     setIsCharging(true);
     chargeStart.current = Date.now();
+    haptic([20]);
     chargeTimer.current = setInterval(() => {
       const raw = Math.min(((Date.now() - chargeStart.current) / 1000 / 2.2) * 100, 100);
       chargeRef.current = raw;
       setCharge(raw);
+      // Escalating haptic pulses at thresholds
+      if (raw >= 50 && raw < 51) haptic([30]);
+      if (raw >= 80 && raw < 81) haptic([50, 20, 30]);
       if (raw >= 100) stopCharging();
     }, 16);
   }, [isEnabled, released, stopCharging]);
@@ -118,6 +147,18 @@ export function ComposeScreen({ username, count, selectedMode, onModeChange, onL
       className="min-h-[100dvh] w-full flex flex-col max-w-[430px] mx-auto relative overflow-hidden"
       style={{ boxShadow: screenGlow > 0.1 ? `inset 0 0 ${60 * screenGlow}px ${glowColor}` : 'none' }}
     >
+      <style>{`
+        @keyframes ragePulse { 0%,100%{opacity:1} 50%{opacity:0.7} }
+        @keyframes fadeInUp { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+      `}</style>
+
+      {/* Rage mode overlay pulse */}
+      {isRageMode && !isCharging && (
+        <div className="absolute inset-0 pointer-events-none z-5"
+          style={{ background: 'radial-gradient(ellipse at center, transparent 60%, rgba(197,58,30,0.08) 100%)',
+            animation: 'ragePulse 1s ease-in-out infinite' }} />
+      )}
+
       {/* Vignette */}
       {isCharging && (
         <div className="absolute inset-0 pointer-events-none z-10"
@@ -138,6 +179,12 @@ export function ComposeScreen({ username, count, selectedMode, onModeChange, onL
       <header className="flex justify-between items-center p-6 border-b border-border relative z-20">
         <Wordmark />
         <div className="flex items-center gap-4">
+          {streak >= 2 && (
+            <span className="text-xs font-mono tracking-widest" style={{ color: streak >= 7 ? '#C53A1E' : '#a04a2a' }}
+              title={`${streak} day streak`}>
+              {streak >= 7 ? '🔥' : '◈'} {streak}d
+            </span>
+          )}
           <span className="text-xs font-mono text-muted-foreground" data-testid="text-count">
             {count > 0
               ? <span style={{ color: count >= 10 ? '#C53A1E' : undefined }}>Released: {count}</span>
@@ -169,9 +216,15 @@ export function ComposeScreen({ username, count, selectedMode, onModeChange, onL
               </span>
             )}
           </div>
-          <textarea value={message} onChange={e => setMessage(e.target.value)}
+          <textarea value={message} onChange={e => { setMessage(e.target.value); playTypeClick(); }}
             placeholder="Write what you never sent."
-            className="w-full flex-1 min-h-[160px] bg-transparent border-b border-border focus:border-foreground pb-2 text-lg md:text-xl font-serif leading-relaxed outline-none transition-colors rounded-none resize-none placeholder:text-muted-foreground placeholder:italic"
+            className="w-full flex-1 min-h-[160px] bg-transparent border-b pb-2 text-lg md:text-xl font-serif leading-relaxed outline-none transition-colors rounded-none resize-none placeholder:text-muted-foreground placeholder:italic"
+            style={{
+              borderColor: isRageMode ? '#C53A1E' : undefined,
+              color: isRageMode ? '#ff4422' : undefined,
+              textShadow: isRageMode ? '0 0 12px rgba(197,58,30,0.4)' : undefined,
+              animation: isRageMode ? 'ragePulse 1.2s ease-in-out infinite' : undefined,
+            }}
             data-testid="input-message" />
         </section>
 
