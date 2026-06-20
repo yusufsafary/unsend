@@ -43,10 +43,10 @@ function analyzeIntensity(text: string): number {
 }
 
 const CHARGE_LABELS = [
-  { min: 0,  label: 'hold to charge',   color: '#8C8473' },
+  { min: 0,  label: 'press + hold',      color: '#8C8473' },
   { min: 20, label: 'warming up',        color: '#a04a2a' },
-  { min: 50, label: 'building pressure', color: '#C53A1E' },
-  { min: 80, label: 'full send',         color: '#ff3300' },
+  { min: 50, label: 'pressure building', color: '#C53A1E' },
+  { min: 80, label: '— release —',       color: '#ff3300' },
 ];
 
 const MODES: { id: ShatterMode; label: string; icon: string; unlockAt: number; desc: string; color: string }[] = [
@@ -186,10 +186,9 @@ export function ComposeScreen({ username, count, streak, selectedMode, onModeCha
             </span>
           )}
           <span className="text-xs font-mono text-muted-foreground" data-testid="text-count">
-            {count > 0
-              ? <span style={{ color: count >= 10 ? '#C53A1E' : undefined }}>Released: {count}</span>
-              : 'Released: 0'
-            }
+            <span style={{ color: count >= 10 ? '#C53A1E' : undefined }}>
+              × {count}
+            </span>
           </span>
           <button onClick={onLogout} className="text-xs font-mono uppercase tracking-widest hover:text-accent transition-colors" data-testid="button-logout">
             Log out
@@ -199,25 +198,25 @@ export function ComposeScreen({ username, count, streak, selectedMode, onModeCha
 
       <main className="flex-1 flex flex-col p-6 gap-8 relative z-20">
         <section className="flex flex-col gap-4 mt-4">
-          <label className="text-xs font-mono text-muted-foreground tracking-widest uppercase">01 — WHO</label>
+          <label className="text-xs font-mono text-muted-foreground tracking-widest uppercase">— to</label>
           <input type="text" value={who} onChange={e => setWho(e.target.value)}
-            placeholder="Who is this for? (Optional)"
-            className="w-full bg-transparent border-b border-border focus:border-foreground pb-2 text-base font-mono outline-none transition-colors rounded-none placeholder:text-muted-foreground"
+            placeholder="leave blank for the universe"
+            className="w-full bg-transparent border-b border-border focus:border-foreground pb-2 text-base font-mono outline-none transition-colors rounded-none placeholder:text-muted-foreground placeholder:italic"
             data-testid="input-who" />
         </section>
 
         <section className="flex flex-col gap-4 flex-1">
           <div className="flex justify-between items-center">
-            <label className="text-xs font-mono text-muted-foreground tracking-widest uppercase">02 — WHAT</label>
+            <label className="text-xs font-mono text-muted-foreground tracking-widest uppercase">— the unsaid</label>
             {message.trim().length > 0 && (
               <span className="text-xs font-mono tracking-widest uppercase transition-all"
                 style={{ color: textIntensity > 40 ? '#C53A1E' : '#8C8473' }}>
-                {textIntensity > 50 ? '⚡ intense' : textIntensity > 25 ? '— charged' : '— calm'}
+                {isRageMode ? '⚡ rage' : textIntensity > 50 ? '— charged' : textIntensity > 25 ? '— loaded' : '— calm'}
               </span>
             )}
           </div>
           <textarea value={message} onChange={e => { setMessage(e.target.value); playTypeClick(); }}
-            placeholder="Write what you never sent."
+            placeholder="say what you never could."
             className="w-full flex-1 min-h-[160px] bg-transparent border-b pb-2 text-lg md:text-xl font-serif leading-relaxed outline-none transition-colors rounded-none resize-none placeholder:text-muted-foreground placeholder:italic"
             style={{
               borderColor: isRageMode ? '#C53A1E' : undefined,
@@ -230,7 +229,7 @@ export function ComposeScreen({ username, count, streak, selectedMode, onModeCha
 
         {/* Mode selector — always visible */}
         <section className="flex flex-col gap-3">
-          <label className="text-xs font-mono text-muted-foreground tracking-widest uppercase">03 — MODE</label>
+          <label className="text-xs font-mono text-muted-foreground tracking-widest uppercase">— destroy it</label>
           <div className="grid grid-cols-4 gap-2">
             {MODES.map(m => {
               const unlocked = count >= m.unlockAt;
@@ -249,10 +248,10 @@ export function ComposeScreen({ username, count, streak, selectedMode, onModeCha
                   }}
                   data-testid={`mode-${m.id}`}
                 >
-                  <span className="text-base leading-none">{unlocked ? m.icon : '🔒'}</span>
+                  <span className="text-base leading-none" style={{ filter: unlocked ? 'none' : 'grayscale(1)', opacity: unlocked ? 1 : 0.3 }}>{m.icon}</span>
                   <span className="text-[9px] font-mono uppercase tracking-widest leading-none">{m.label}</span>
                   {!unlocked && (
-                    <span className="text-[8px] font-mono" style={{ color: '#3a3530' }}>×{m.unlockAt}</span>
+                    <span className="text-[8px] font-mono italic" style={{ color: '#2a2820' }}>at {m.unlockAt}</span>
                   )}
                 </button>
               );
@@ -309,7 +308,7 @@ export function ComposeScreen({ username, count, streak, selectedMode, onModeCha
                 {released ? 'releasing...' : charge > 80 ? 'RELEASE NOW →' : 'Let it go →'}
               </button>
               {charge < 5 && !isCharging && (
-                <p className="text-xs font-mono" style={{ color: '#5C5547' }}>Press and hold to charge the release</p>
+                <p className="text-xs font-mono tracking-widest" style={{ color: '#2d2b26' }}>— hold —</p>
               )}
             </div>
           ) : (
