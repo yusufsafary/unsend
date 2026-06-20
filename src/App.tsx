@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { LoginScreen } from "./pages/LoginScreen";
 import { ComposeScreen } from "./pages/ComposeScreen";
 import { ReleaseScreen } from "./pages/ReleaseScreen";
+import { Grain } from "./components/Grain";
 
 export type ShatterMode = 'default' | 'fire' | 'mirror' | 'slowmo';
 
@@ -74,6 +75,7 @@ function App() {
 
   return (
     <>
+      <Grain />
       {view === 'login' && <LoginScreen onLogin={handleLogin} />}
       {view === 'compose' && user && (
         <ComposeScreen
