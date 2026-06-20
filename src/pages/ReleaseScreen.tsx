@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import type { ShatterMode } from '../App';
 
 interface ReleaseScreenProps {
+  releaseCount: number;
   message: string;
   chargeLevel: number;
   mode: ShatterMode;
@@ -129,12 +130,15 @@ interface FragData {
   delay: number;
 }
 
-export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose }: ReleaseScreenProps) {
+export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComplete, onClose }: ReleaseScreenProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [stage, setStage] = useState<'drawing'|'cracking'|'falling'|'done'>('drawing');
   const [flashOpacity, setFlashOpacity] = useState(0);
   const [drawHint, setDrawHint] = useState(true);
+  const [countdown, setCountdown] = useState(3);
+  const [copied, setCopied] = useState(false);
+  const interactRef = useRef<((x: number, y: number) => void) | null>(null);
   const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const cfg = MODE_CFG[mode];
   const closureLine = useMemo(
@@ -516,6 +520,34 @@ export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose 
     };
     animId=requestAnimationFrame(tick);
 
+    // ── Fragment tap interaction (exposed via ref) ──
+    const halfFOV = Math.tan(22.5 * Math.PI / 180);
+    interactRef.current = (sx: number, sy: number) => {
+      if (phase !== 'falling') return;
+      const halfW = camera.position.z * halfFOV;
+      const halfH = halfW * (H / W);
+      const wx = ((sx / W) * 2 - 1) * halfW;
+      const wy = -((sy / H) * 2 - 1) * halfH;
+      let hit = 0;
+      fragments.forEach(f => {
+        const dx = f.mesh.position.x - wx;
+        const dy = f.mesh.position.y - wy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 2.2) {
+          hit++;
+          const force = ((2.2 - dist) / 2.2) * 5;
+          const a = Math.atan2(dy, dx);
+          f.vx += Math.cos(a) * force * (0.7 + Math.random() * 0.6);
+          f.vy += Math.sin(a) * force * (0.5 + Math.random() * 0.5) + 0.8;
+          f.vz += (Math.random() - 0.5) * 2.5;
+          f.rx += (Math.random() - 0.5) * 0.25;
+          f.rz += (Math.random() - 0.5) * 0.2;
+        }
+      });
+      // Flash light burst on hit
+      if (hit > 0) { flashLight.intensity = 2 + hit * 0.4; }
+    };
+
     const onResize=()=>{
       const nW=container.clientWidth,nH=container.clientHeight;
       renderer.setSize(nW,nH); camera.aspect=nW/nH; camera.updateProjectionMatrix();
@@ -534,6 +566,22 @@ export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose 
       renderer.dispose(); msgTex.dispose();
     };
   }, [message, chargeLevel, mode, intensity, nFrags, nParticles, shakeStr, baseSpd, CRACK_DUR, FALL_DUR, cfg, onComplete]);
+
+  // Countdown timer — starts at 3, ticks down while in drawing phase
+  useEffect(() => {
+    if (stage !== 'drawing' || countdown <= 0) return;
+    const t = setTimeout(() => setCountdown(c => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [stage, countdown]);
+
+  // Space key = trigger release
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && stage === 'drawing') { e.preventDefault(); triggerNow(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [stage]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const triggerNow = () => {
     const fn=(window as unknown as Record<string,unknown>).__unsendTrigger as (()=>void)|undefined;
@@ -559,6 +607,18 @@ export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose 
         </div>
       )}
 
+      {/* Tap-to-burst during falling */}
+      {stage==='falling' && (
+        <div className="absolute inset-0 z-5"
+          style={{cursor:'crosshair'}}
+          onClick={e => { interactRef.current?.(e.clientX, e.clientY); }}
+          onTouchStart={e => {
+            const t = e.touches[0];
+            if (t) interactRef.current?.(t.clientX, t.clientY);
+          }}
+        />
+      )}
+
       {/* Drawing phase UI */}
       {stage==='drawing' && (
         <div className="absolute inset-x-0 bottom-10 z-20 flex flex-col items-center gap-4 px-6">
@@ -582,6 +642,17 @@ export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose 
                 {Math.round(chargeLevel)}% charge
               </span>
             )}
+          </div>
+          {/* Countdown + Space hint */}
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-xs" style={{color:'#2a2820'}}>
+              Space to release
+            </span>
+            <span className="font-mono text-base tabular-nums"
+              style={{color: countdown <= 1 ? modeAccent : '#3a3530',
+                transition:'color 0.3s', minWidth:'1.2em', textAlign:'center'}}>
+              {countdown > 0 ? countdown : '…'}
+            </span>
           </div>
         </div>
       )}
@@ -623,7 +694,7 @@ export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose 
           )}
           {chargeLevel<=60&&<div style={{marginBottom:'3rem'}}/>}
           <div style={{width:'100%',maxWidth:300,height:1,background:'#1e1c18',marginBottom:'2.5rem'}}/>
-          <div style={{display:'flex',gap:'2.5rem',alignItems:'center'}}>
+          <div style={{display:'flex',gap:'2rem',alignItems:'center',flexWrap:'wrap',justifyContent:'center'}}>
             {(['Write another','Done for now'] as const).map((label,i)=>(
               <button key={label}
                 onClick={i===0?onClose:()=>window.location.reload()}
@@ -635,6 +706,21 @@ export function ReleaseScreen({ message, chargeLevel, mode, onComplete, onClose 
                 {label}
               </button>
             ))}
+            <button
+              onClick={() => {
+                const modeTag = mode !== 'default' ? ` [${mode} mode]` : '';
+                const chargeTag = chargeLevel > 70 ? ` at ${Math.round(chargeLevel)}% intensity` : '';
+                const txt = `Unsent #${releaseCount + 1}${chargeTag}${modeTag} — unsend.games`;
+                navigator.clipboard.writeText(txt).then(() => {
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2200);
+                }).catch(() => {});
+              }}
+              className="font-mono text-xs uppercase tracking-widest transition-all"
+              style={{color: copied ? modeAccent : '#5C5547', paddingBottom:2,
+                borderBottom: `1px solid ${copied ? modeAccent : 'transparent'}`}}>
+              {copied ? 'Copied ✓' : 'Share →'}
+            </button>
           </div>
         </div>
       )}
