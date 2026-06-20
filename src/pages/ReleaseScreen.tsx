@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as THREE from 'three';
 import type { ShatterMode } from '../App';
+import type { Zone } from '../lib/adventure';
 
 interface ReleaseScreenProps {
   releaseCount: number;
   message: string;
   chargeLevel: number;
   mode: ShatterMode;
+  bossZone?: Zone | null;
   onComplete: () => void;
   onClose: () => void;
 }
@@ -156,7 +158,7 @@ interface FragData {
   col: number;          // column index for glitch
 }
 
-export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComplete, onClose }: ReleaseScreenProps) {
+export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, bossZone, onComplete, onClose }: ReleaseScreenProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [stage, setStage] = useState<'drawing'|'cracking'|'falling'|'done'>('drawing');
@@ -926,6 +928,34 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
               style={{color:'#2a2820'}}>
               {mode !== 'default' ? mode : 'classic'} · {Math.round(chargeLevel)}%
             </p>
+
+            {/* Boss encounter result */}
+            {bossZone && (() => {
+              const defeated = chargeLevel >= bossZone.bossRequiredCharge;
+              return (
+                <div style={{marginTop:'2rem', borderTop:'1px solid #1a1510', paddingTop:'1.5rem'}}>
+                  <div className="font-mono text-[8px] uppercase tracking-[0.4em]"
+                    style={{color: defeated ? bossZone.color : '#3a3020', marginBottom:'0.5rem'}}>
+                    {defeated ? '◆ boss defeated' : '◇ boss encounter'}
+                  </div>
+                  <div className="font-mono text-xs uppercase tracking-widest"
+                    style={{color: defeated ? bossZone.color : '#5C5547', marginBottom:'0.4rem',
+                      filter: defeated ? `drop-shadow(0 0 6px ${bossZone.color}66)` : 'none'}}>
+                    {bossZone.symbol} {bossZone.bossName}
+                  </div>
+                  <p className="font-serif italic text-sm"
+                    style={{color: defeated ? '#8a7255' : '#3a3020'}}>
+                    {defeated ? bossZone.defeatLine : 'Not enough charge. The shadow remains.'}
+                  </p>
+                  {defeated && (
+                    <div className="font-mono text-[8px] uppercase tracking-widest"
+                      style={{color:'#C53A1E', marginTop:'0.5rem'}}>
+                      +200 xp · item dropped
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Bottom actions */}

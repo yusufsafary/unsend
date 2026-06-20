@@ -1,7 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Wordmark } from '../components/Wordmark';
+import { BossAlert } from '../components/BossAlert';
+import { ItemBar } from '../components/ItemBar';
 import type { ShatterMode } from '../App';
 import { getXPProgress, getDailyPrompt, isDailyCompleted, type GameState } from '../lib/gameState';
+import { type AdventureState, type Zone, type Quest } from '../lib/adventure';
 
 interface ComposeScreenProps {
   username: string;
@@ -9,11 +12,18 @@ interface ComposeScreenProps {
   streak: number;
   selectedMode: ShatterMode;
   gameState: GameState;
+  adventureState: AdventureState;
+  currentZone: Zone;
+  isBossNext: boolean;
+  nextBossZone: Zone | null;
+  activeQuests: Quest[];
   onModeChange: (mode: ShatterMode) => void;
   onLogout: () => void;
   onRelease: (message: string, chargeLevel: number, isRage: boolean, messageLength: number) => void;
   onOpenStats: () => void;
+  onOpenMap: () => void;
   onDailyUsed: () => void;
+  onUseItem: (itemId: string) => void;
 }
 
 function playTypeClick() {
@@ -47,22 +57,26 @@ function analyzeIntensity(text: string): number {
 }
 
 const CHARGE_LABELS = [
-  { min: 0,  label: 'press + hold',      color: '#8C8473' },
+  { min: 0,  label: 'press + hold',      color: '#8a7255' },
   { min: 20, label: 'warming up',        color: '#a04a2a' },
   { min: 50, label: 'pressure building', color: '#C53A1E' },
   { min: 80, label: '— release —',       color: '#ff3300' },
 ];
 
-const MODES: { id: ShatterMode; label: string; icon: string; unlockAt: number; desc: string; color: string }[] = [
-  { id: 'default', label: 'Classic',  icon: '◈', unlockAt: 0,  desc: 'Standard shatter',          color: '#8C8473' },
-  { id: 'fire',    label: 'Fire',     icon: '◉', unlockAt: 3,  desc: 'Ember explosion',           color: '#ff5a1a' },
-  { id: 'mirror',  label: 'Mirror',   icon: '◎', unlockAt: 6,  desc: 'Symmetrical burst',         color: '#7ab8d4' },
-  { id: 'slowmo',  label: 'Slow-Mo',  icon: '◷', unlockAt: 10, desc: 'Cinematic 0.3× time',       color: '#b4a0d4' },
-  { id: 'vortex',  label: 'Vortex',   icon: '◌', unlockAt: 15, desc: 'Spiral tornado burst',      color: '#8855ff' },
-  { id: 'glitch',  label: 'Glitch',   icon: '▣', unlockAt: 20, desc: 'Digital signal collapse',   color: '#00cc66' },
+const MODES: { id: ShatterMode; label: string; icon: string; unlockAt: number; desc: string; color: string; zoneName: string }[] = [
+  { id: 'default', label: 'Classic',  icon: '◈', unlockAt: 0,  desc: 'Standard shatter',        color: '#8C8473', zoneName: 'Wasteland' },
+  { id: 'fire',    label: 'Fire',     icon: '◉', unlockAt: 3,  desc: 'Ember explosion',         color: '#ff5a1a', zoneName: 'Inferno' },
+  { id: 'mirror',  label: 'Mirror',   icon: '◎', unlockAt: 6,  desc: 'Symmetrical burst',       color: '#7ab8d4', zoneName: 'Mirror Realm' },
+  { id: 'slowmo',  label: 'Slow-Mo',  icon: '◷', unlockAt: 10, desc: 'Cinematic 0.3× time',     color: '#b4a0d4', zoneName: 'Cathedral of Time' },
+  { id: 'vortex',  label: 'Vortex',   icon: '◌', unlockAt: 15, desc: 'Spiral tornado burst',    color: '#8855ff', zoneName: 'Vortex Nexus' },
+  { id: 'glitch',  label: 'Glitch',   icon: '▣', unlockAt: 20, desc: 'Digital signal collapse', color: '#00cc66', zoneName: 'Glitch Matrix' },
 ];
 
-export function ComposeScreen({ username, count, streak, selectedMode, gameState, onModeChange, onLogout, onRelease, onOpenStats, onDailyUsed }: ComposeScreenProps) {
+export function ComposeScreen({
+  username, count, streak, selectedMode, gameState, adventureState,
+  currentZone, isBossNext, nextBossZone, activeQuests,
+  onModeChange, onLogout, onRelease, onOpenStats, onOpenMap, onDailyUsed, onUseItem,
+}: ComposeScreenProps) {
   const [who, setWho] = useState('');
   const [message, setMessage] = useState('');
   const [charge, setCharge] = useState(0);
@@ -73,24 +87,28 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
   const chargeRef   = useRef(0);
   const chargeTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const chargeStart = useRef(0);
+
+  const hasChargeSpeed = adventureState.activeItemEffects.includes('charge_speed');
+  const hasRageCrystal = adventureState.activeItemEffects.includes('rage');
+
   const isEnabled = message.trim().length > 0;
   const textIntensity = analyzeIntensity(message);
   const chargeLabel = CHARGE_LABELS.slice().reverse().find(l => charge >= l.min) ?? CHARGE_LABELS[0];
 
   const alphaChars = message.replace(/[^a-zA-Z]/g, '');
-  const isRageMode = alphaChars.length > 8 && (message.match(/[A-Z]/g) || []).length / alphaChars.length > 0.6;
+  const naturalRage = alphaChars.length > 8 && (message.match(/[A-Z]/g) || []).length / alphaChars.length > 0.6;
+  const isRageMode = naturalRage || hasRageCrystal;
 
   const { xp, level } = gameState;
   const progress = getXPProgress(xp, level);
   const dailyPrompt = getDailyPrompt();
   const isDailyDone = isDailyCompleted(gameState);
 
-  // Show unlock toast when count hits thresholds
   useEffect(() => {
     const found = MODES.find(m => m.unlockAt === count);
     if (found && found.unlockAt > 0) {
-      setUnlockToast(`${found.icon} ${found.label} mode unlocked`);
-      const t = setTimeout(() => setUnlockToast(null), 3200);
+      setUnlockToast(`${found.icon} ${found.label} unlocked — ${found.zoneName}`);
+      const t = setTimeout(() => setUnlockToast(null), 3500);
       return () => clearTimeout(t);
     }
     return undefined;
@@ -116,15 +134,16 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
     setIsCharging(true);
     chargeStart.current = Date.now();
     haptic([20]);
+    const speedDivisor = hasChargeSpeed ? 1.1 : 2.2;
     chargeTimer.current = setInterval(() => {
-      const raw = Math.min(((Date.now() - chargeStart.current) / 1000 / 2.2) * 100, 100);
+      const raw = Math.min(((Date.now() - chargeStart.current) / 1000 / speedDivisor) * 100, 100);
       chargeRef.current = raw;
       setCharge(raw);
       if (raw >= 50 && raw < 51) haptic([30]);
       if (raw >= 80 && raw < 81) haptic([50, 20, 30]);
       if (raw >= 100) stopCharging();
     }, 16);
-  }, [isEnabled, released, stopCharging]);
+  }, [isEnabled, released, stopCharging, hasChargeSpeed]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -153,9 +172,11 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
                   : selectedMode === 'glitch'  ? `rgba(0,204,102,${screenGlow * 0.25})`
                   : `rgba(197,58,30,${screenGlow * 0.35})`;
 
-  // Combo indicator
   const withinCombo = (Date.now() - gameState.lastReleaseTime) < 60000;
   const combo = withinCombo ? gameState.comboCount : 0;
+
+  // First active quest for display
+  const featuredQuest = activeQuests[0] ?? null;
 
   return (
     <div
@@ -167,30 +188,32 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
         @keyframes fadeInUp { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes xpPulse { 0%,100%{opacity:1;transform:scaleX(1)} 50%{opacity:0.8;transform:scaleX(0.998)} }
         @keyframes glitchFlicker { 0%,100%{opacity:1} 50%{opacity:0.85} 75%{opacity:0.95} }
+        @keyframes zonePulse { 0%,100%{opacity:0.7} 50%{opacity:1} }
+        @keyframes bossWarn { 0%,100%{opacity:1} 50%{opacity:0.5} }
       `}</style>
 
-      {/* Rage mode overlay pulse */}
+      {/* Rage mode overlay */}
       {isRageMode && !isCharging && (
         <div className="absolute inset-0 pointer-events-none z-5"
           style={{ background: 'radial-gradient(ellipse at center, transparent 60%, rgba(197,58,30,0.08) 100%)',
             animation: 'ragePulse 1s ease-in-out infinite' }} />
       )}
 
-      {/* Glitch mode: scanline flicker */}
+      {/* Glitch scanlines */}
       {selectedMode === 'glitch' && (
         <div className="absolute inset-0 pointer-events-none z-5"
           style={{ backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,204,102,0.02) 3px, rgba(0,204,102,0.02) 4px)',
             animation: 'glitchFlicker 0.8s linear infinite' }} />
       )}
 
-      {/* Vortex mode: subtle radial */}
+      {/* Vortex ambient */}
       {selectedMode === 'vortex' && (
         <div className="absolute inset-0 pointer-events-none z-5"
           style={{ background: 'radial-gradient(ellipse at center, rgba(136,85,255,0.04) 0%, transparent 70%)',
             animation: 'ragePulse 2s ease-in-out infinite' }} />
       )}
 
-      {/* Vignette on charging */}
+      {/* Charge vignette */}
       {isCharging && (
         <div className="absolute inset-0 pointer-events-none z-10"
           style={{ background: `radial-gradient(ellipse at center, transparent 50%, ${glowColor} 100%)` }} />
@@ -200,55 +223,90 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
       {unlockToast && (
         <div className="absolute top-20 inset-x-0 z-50 flex justify-center pointer-events-none">
           <div className="font-mono text-xs uppercase tracking-widest px-5 py-3"
-            style={{ border: `1px solid ${modeColor}`, color: modeColor, background: '#16140F', animation: 'fadeInUp 0.4s ease forwards' }}>
+            style={{ border: `1px solid ${modeColor}`, color: modeColor, background: '#0d0907',
+              animation: 'fadeInUp 0.4s ease forwards' }}>
             {unlockToast}
           </div>
         </div>
       )}
 
       {/* Header */}
-      <header className="flex justify-between items-center p-6 border-b border-border relative z-20">
+      <header className="flex justify-between items-center px-5 py-4 relative z-20"
+        style={{ borderBottom: '1px solid #1a1510' }}>
         <Wordmark />
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           {combo >= 2 && (
-            <span className="text-xs font-mono tracking-widest" style={{ color: modeColor }} title={`${combo}× combo!`}>
-              ×{combo} combo
+            <span className="text-xs font-mono tracking-widest" style={{ color: modeColor }}>
+              ×{combo}
             </span>
           )}
           {streak >= 2 && (
-            <span className="text-xs font-mono tracking-widest" style={{ color: streak >= 7 ? '#C53A1E' : '#a04a2a' }}
-              title={`${streak} day streak`}>
-              {streak >= 7 ? '🔥' : '◈'} {streak}d
+            <span className="text-xs font-mono" style={{ color: streak >= 7 ? '#C53A1E' : '#8a7255' }}>
+              {streak >= 7 ? '🔥' : '◈'}{streak}d
             </span>
           )}
-          <span className="text-xs font-mono text-muted-foreground" data-testid="text-count">
-            <span style={{ color: count >= 10 ? '#C53A1E' : undefined }}>× {count}</span>
+          <span className="text-xs font-mono" style={{ color: count >= 10 ? '#C53A1E' : '#3a3020' }}>
+            ×{count}
           </span>
-          <button onClick={onOpenStats}
-            className="text-xs font-mono uppercase tracking-widest transition-colors"
+          <button onClick={onOpenMap}
+            className="text-xs font-mono uppercase tracking-widest transition-all"
             style={{ color: '#5C5547' }}
-            onMouseEnter={e => { e.currentTarget.style.color = '#F2EFE9'; }}
-            onMouseLeave={e => { e.currentTarget.style.color = '#5C5547'; }}
-            title="Stats & Achievements">
+            onMouseEnter={e => e.currentTarget.style.color = '#e8c89a'}
+            onMouseLeave={e => e.currentTarget.style.color = '#5C5547'}
+            title="World Map">
+            map
+          </button>
+          <button onClick={onOpenStats}
+            className="text-xs font-mono uppercase tracking-widest transition-all"
+            style={{ color: '#5C5547' }}
+            onMouseEnter={e => e.currentTarget.style.color = '#F2EFE9'}
+            onMouseLeave={e => e.currentTarget.style.color = '#5C5547'}>
             lvl {gameState.level}
           </button>
-          <button onClick={onLogout} className="text-xs font-mono uppercase tracking-widest hover:text-accent transition-colors" data-testid="button-logout">
-            Log out
+          <button onClick={onLogout}
+            className="text-xs font-mono uppercase tracking-widest"
+            style={{ color: '#2a2418' }}
+            onMouseEnter={e => e.currentTarget.style.color = '#5C5547'}
+            onMouseLeave={e => e.currentTarget.style.color = '#2a2418'}>
+            ⏻
           </button>
         </div>
       </header>
 
+      {/* Zone banner */}
+      <div className="relative z-20 px-5 py-2 flex items-center gap-3"
+        style={{ background: `${currentZone.color}08`, borderBottom: `1px solid ${currentZone.color}22` }}>
+        <span style={{ color: currentZone.color, fontSize: 14, animation: 'zonePulse 3s ease-in-out infinite' }}>
+          {currentZone.symbol}
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className="font-mono text-[8px] uppercase tracking-[0.35em]"
+              style={{ color: currentZone.color }}>
+              {currentZone.name}
+            </span>
+            <span className="font-mono text-[7px]" style={{ color: '#2a2418' }}>
+              · {currentZone.subtitle}
+            </span>
+          </div>
+        </div>
+        <span className="font-mono text-[7px] uppercase tracking-widest flex-shrink-0"
+          style={{ color: '#2a2418' }}>
+          realm {String(MODES.findIndex(m => m.id === selectedMode) + 1).padStart(2, '0')}/06
+        </span>
+      </div>
+
       {/* XP Progress bar */}
-      <div className="relative z-20 px-6 py-2 border-b" style={{ borderColor: '#1a1815' }}>
+      <div className="relative z-20 px-5 py-2" style={{ borderBottom: '1px solid #120e0a' }}>
         <div className="flex justify-between items-center mb-1">
-          <span className="font-mono text-[9px] uppercase tracking-widest" style={{ color: '#3a3530' }}>
-            xp · level {gameState.level}
+          <span className="font-mono text-[8px] uppercase tracking-[0.3em]" style={{ color: '#2a2418' }}>
+            xp · lv{gameState.level}
           </span>
-          <span className="font-mono text-[9px]" style={{ color: '#3a3530' }}>
-            {gameState.xp} / {progress.needed + (gameState.xp - progress.current)} xp
+          <span className="font-mono text-[8px]" style={{ color: '#2a2418' }}>
+            {gameState.xp} xp
           </span>
         </div>
-        <div className="w-full h-[1px] relative" style={{ background: '#1a1815' }}>
+        <div className="w-full h-[1px] relative" style={{ background: '#1a1510' }}>
           <div style={{
             position: 'absolute', top: 0, left: 0, height: '100%',
             width: `${progress.pct}%`,
@@ -259,7 +317,12 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
         </div>
       </div>
 
-      <main className="flex-1 flex flex-col p-6 gap-8 relative z-20">
+      <main className="flex-1 flex flex-col px-5 py-4 gap-6 relative z-20 overflow-y-auto">
+
+        {/* Boss Alert */}
+        {isBossNext && nextBossZone && (
+          <BossAlert zone={nextBossZone} />
+        )}
 
         {/* Daily Challenge */}
         <section className="flex flex-col gap-2">
@@ -267,35 +330,30 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
             onClick={() => setDailyExpanded(d => !d)}
             className="flex justify-between items-center w-full text-left"
           >
-            <label className="text-xs font-mono tracking-widest uppercase pointer-events-none"
-              style={{ color: isDailyDone ? '#3a3530' : '#C53A1E' }}>
-              — daily challenge {isDailyDone ? '✓' : '+50xp'}
+            <label className="text-[9px] font-mono tracking-[0.35em] uppercase pointer-events-none"
+              style={{ color: isDailyDone ? '#2a2418' : '#C53A1E' }}>
+              ◆ daily challenge {isDailyDone ? '✓' : '+50xp'}
             </label>
-            <span className="font-mono text-[10px]" style={{ color: '#3a3530' }}>
+            <span className="font-mono text-[9px]" style={{ color: '#2a2418' }}>
               {dailyExpanded ? '▲' : '▼'}
             </span>
           </button>
           {dailyExpanded && (
-            <div className="py-3 px-4 border-l-2 transition-all"
-              style={{ borderColor: isDailyDone ? '#2a2820' : '#C53A1E', background: '#1a1815' }}>
+            <div className="py-2 px-3 border-l-2 transition-all"
+              style={{ borderColor: isDailyDone ? '#1e1a15' : '#C53A1E', background: '#110d09' }}>
               <p className="font-serif italic text-sm leading-relaxed"
-                style={{ color: isDailyDone ? '#5C5547' : '#8C8473' }}>
+                style={{ color: isDailyDone ? '#3a3020' : '#6a5a40' }}>
                 "{dailyPrompt}"
               </p>
               {!isDailyDone && (
-                <button
-                  className="mt-3 text-[10px] font-mono uppercase tracking-widest"
+                <button className="mt-2 text-[9px] font-mono uppercase tracking-widest"
                   style={{ color: '#C53A1E' }}
-                  onClick={() => {
-                    setMessage(prev => prev ? prev : '');
-                    onDailyUsed();
-                  }}
-                >
+                  onClick={() => { onDailyUsed(); setDailyExpanded(false); }}>
                   use as prompt →
                 </button>
               )}
               {isDailyDone && (
-                <p className="mt-2 font-mono text-[9px] uppercase tracking-widest" style={{ color: '#3a3530' }}>
+                <p className="mt-1 font-mono text-[8px] uppercase tracking-widest" style={{ color: '#2a2418' }}>
                   completed today
                 </p>
               )}
@@ -303,39 +361,54 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
           )}
         </section>
 
-        <section className="flex flex-col gap-4">
-          <label className="text-xs font-mono text-muted-foreground tracking-widest uppercase">— to</label>
+        {/* To field */}
+        <section className="flex flex-col gap-2">
+          <label className="text-[9px] font-mono tracking-[0.35em] uppercase" style={{ color: '#3a3020' }}>
+            — to
+          </label>
           <input type="text" value={who} onChange={e => setWho(e.target.value)}
             placeholder="leave blank for the universe"
-            className="w-full bg-transparent border-b border-border focus:border-foreground pb-2 text-base font-mono outline-none transition-colors rounded-none placeholder:text-muted-foreground placeholder:italic"
+            className="w-full bg-transparent border-b pb-2 text-sm font-mono outline-none transition-colors rounded-none"
+            style={{ borderColor: '#1e1a15', color: '#F2EFE9', caretColor: '#C53A1E' }}
             data-testid="input-who" />
         </section>
 
-        <section className="flex flex-col gap-4 flex-1">
+        {/* Message field */}
+        <section className="flex flex-col gap-2 flex-1">
           <div className="flex justify-between items-center">
-            <label className="text-xs font-mono text-muted-foreground tracking-widest uppercase">— the unsaid</label>
+            <label className="text-[9px] font-mono tracking-[0.35em] uppercase" style={{ color: '#3a3020' }}>
+              — the unsaid
+            </label>
             {message.trim().length > 0 && (
-              <span className="text-xs font-mono tracking-widest uppercase transition-all"
-                style={{ color: textIntensity > 40 ? '#C53A1E' : '#8C8473' }}>
-                {isRageMode ? '⚡ rage' : textIntensity > 50 ? '— charged' : textIntensity > 25 ? '— loaded' : '— calm'}
+              <span className="text-[9px] font-mono tracking-widest uppercase"
+                style={{ color: textIntensity > 40 ? '#C53A1E' : '#5C5547' }}>
+                {isRageMode
+                  ? (hasRageCrystal ? '◉ rage crystal' : '⚡ rage')
+                  : textIntensity > 50 ? '— charged'
+                  : textIntensity > 25 ? '— loaded'
+                  : '— calm'}
               </span>
             )}
           </div>
-          <textarea value={message} onChange={e => { setMessage(e.target.value); playTypeClick(); }}
+          <textarea value={message}
+            onChange={e => { setMessage(e.target.value); playTypeClick(); }}
             placeholder="say what you never could."
-            className="w-full flex-1 min-h-[140px] bg-transparent border-b pb-2 text-lg md:text-xl font-serif leading-relaxed outline-none transition-colors rounded-none resize-none placeholder:text-muted-foreground placeholder:italic"
+            className="w-full flex-1 min-h-[130px] bg-transparent border-b pb-2 text-lg font-serif leading-relaxed outline-none transition-colors rounded-none resize-none"
             style={{
-              borderColor: isRageMode ? '#C53A1E' : undefined,
-              color: isRageMode ? '#ff4422' : undefined,
+              borderColor: isRageMode ? '#C53A1E' : '#1e1a15',
+              color: isRageMode ? '#ff4422' : '#F2EFE9',
               textShadow: isRageMode ? '0 0 12px rgba(197,58,30,0.4)' : undefined,
               animation: isRageMode ? 'ragePulse 1.2s ease-in-out infinite' : undefined,
+              caretColor: '#C53A1E',
             }}
             data-testid="input-message" />
         </section>
 
-        {/* Mode selector — 2 rows for 6 modes */}
-        <section className="flex flex-col gap-3">
-          <label className="text-xs font-mono text-muted-foreground tracking-widest uppercase">— destroy it</label>
+        {/* Mode selector */}
+        <section className="flex flex-col gap-2">
+          <label className="text-[9px] font-mono tracking-[0.35em] uppercase" style={{ color: '#3a3020' }}>
+            — choose your realm
+          </label>
           <div className="grid grid-cols-3 gap-2">
             {MODES.map(m => {
               const unlocked = count >= m.unlockAt;
@@ -343,55 +416,99 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
               return (
                 <button key={m.id}
                   onClick={() => unlocked && onModeChange(m.id)}
-                  title={unlocked ? m.desc : `Unlocks at ${m.unlockAt} releases`}
+                  title={unlocked ? `${m.zoneName} — ${m.desc}` : `Unlocks at ${m.unlockAt} releases`}
                   disabled={!unlocked}
-                  className="flex flex-col items-center gap-1 py-3 transition-all"
+                  className="flex flex-col items-center gap-1 py-2.5 transition-all"
                   style={{
-                    border: active ? `1px solid ${m.color}` : '1px solid #2a2820',
-                    color: active ? m.color : unlocked ? '#5C5547' : '#2a2820',
+                    border: active ? `1px solid ${m.color}` : '1px solid #1e1a15',
+                    color: active ? m.color : unlocked ? '#5C5547' : '#1e1a15',
                     cursor: unlocked ? 'pointer' : 'not-allowed',
-                    background: active ? `${m.color}12` : 'transparent',
+                    background: active ? `${m.color}10` : 'transparent',
                   }}
                   data-testid={`mode-${m.id}`}
                 >
-                  <span className="text-base leading-none" style={{ filter: unlocked ? 'none' : 'grayscale(1)', opacity: unlocked ? 1 : 0.3 }}>
+                  <span style={{ fontSize: 14, opacity: unlocked ? 1 : 0.3,
+                    filter: active ? `drop-shadow(0 0 4px ${m.color}88)` : 'none' }}>
                     {m.icon}
                   </span>
-                  <span className="text-[9px] font-mono uppercase tracking-widest leading-none">{m.label}</span>
+                  <span className="text-[8px] font-mono uppercase tracking-widest">{m.label}</span>
                   {!unlocked && (
-                    <span className="text-[8px] font-mono italic" style={{ color: '#2a2820' }}>at {m.unlockAt}</span>
+                    <span className="text-[7px] font-mono italic" style={{ color: '#1e1a15' }}>
+                      at {m.unlockAt}
+                    </span>
                   )}
                 </button>
               );
             })}
           </div>
           {selectedMode !== 'default' && (
-            <p className="text-xs font-mono" style={{ color: modeColor, opacity: 0.7 }}>
+            <p className="text-[9px] font-mono" style={{ color: modeColor, opacity: 0.7 }}>
               {MODES.find(m => m.id === selectedMode)?.desc}
             </p>
           )}
         </section>
 
-        {/* Hold-to-charge button */}
-        <div className="pb-6 select-none">
+        {/* Active Quest */}
+        {featuredQuest && (
+          <section style={{
+            border: '1px solid #1e1a15',
+            background: '#0d0a07',
+            padding: '10px 12px',
+          }}>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-mono text-[8px] uppercase tracking-[0.35em]" style={{ color: '#e8c89a', opacity: 0.6 }}>
+                ◆ active quest · ch.{featuredQuest.chapter}
+              </span>
+              <span className="font-mono text-[7px] uppercase tracking-widest" style={{ color: '#2a2418' }}>
+                {activeQuests.length} pending
+              </span>
+            </div>
+            <div className="font-mono text-[10px] uppercase tracking-widest mb-0.5" style={{ color: '#e8c89a' }}>
+              {featuredQuest.title}
+            </div>
+            <div className="font-serif italic text-xs mb-1" style={{ color: '#3a3020' }}>
+              {featuredQuest.desc}
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="font-mono text-[8px] uppercase tracking-widest" style={{ color: '#2a2418' }}>
+                {featuredQuest.objective}
+              </span>
+              <span className="font-mono text-[8px]" style={{ color: '#C53A1E' }}>
+                +{featuredQuest.reward.xp} xp{featuredQuest.reward.item ? ' + item' : ''}
+              </span>
+            </div>
+          </section>
+        )}
+
+        {/* Inventory */}
+        {(adventureState.inventory.length > 0 || count >= 5) && (
+          <ItemBar
+            inventory={adventureState.inventory}
+            activeEffects={adventureState.activeItemEffects}
+            onToggleItem={onUseItem}
+          />
+        )}
+
+        {/* Hold-to-charge */}
+        <div className="pb-4 select-none">
           {isEnabled ? (
             <div className="flex flex-col gap-3">
-              <div className="w-full h-[1px] bg-border relative overflow-hidden">
-                <div className="absolute inset-y-0 left-0"
-                  style={{
-                    width: `${charge}%`,
-                    background: charge > 80 ? '#ff3300' : modeColor,
-                    transition: isCharging ? 'none' : 'width 0.3s ease-out',
-                    boxShadow: charge > 50 ? `0 0 ${charge / 10}px ${modeColor}cc` : 'none',
-                  }} />
+              <div className="w-full h-[1px] relative" style={{ background: '#1e1a15' }}>
+                <div className="absolute inset-y-0 left-0" style={{
+                  width: `${charge}%`,
+                  background: charge > 80 ? '#ff3300' : modeColor,
+                  transition: isCharging ? 'none' : 'width 0.3s ease-out',
+                  boxShadow: charge > 50 ? `0 0 ${charge / 10}px ${modeColor}cc` : 'none',
+                }} />
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-xs font-mono tracking-widest uppercase transition-colors"
+                <span className="text-[9px] font-mono tracking-widest uppercase"
                   style={{ color: charge > 5 ? (charge > 80 ? '#ff3300' : modeColor) : chargeLabel.color }}>
                   {chargeLabel.label}
+                  {hasChargeSpeed && charge < 5 ? ' — amplified' : ''}
                 </span>
                 {charge > 5 && (
-                  <span className="text-xs font-mono" style={{ color: modeColor }}>{Math.round(charge)}%</span>
+                  <span className="text-[9px] font-mono" style={{ color: modeColor }}>{Math.round(charge)}%</span>
                 )}
               </div>
               <button
@@ -409,18 +526,24 @@ export function ComposeScreen({ username, count, streak, selectedMode, gameState
                   cursor: released ? 'default' : 'pointer',
                   userSelect: 'none',
                   WebkitUserSelect: 'none',
-                  transform: highCharge ? `translateX(${(Math.random()-0.5)*3}px)` : 'none',
+                  transform: highCharge ? `translateX(${(Math.random() - 0.5) * 3}px)` : 'none',
                 }}
                 data-testid="button-release"
               >
                 {released ? 'releasing...' : charge > 80 ? 'RELEASE NOW →' : 'Let it go →'}
               </button>
+              {isBossNext && charge > 0 && (
+                <div className="font-mono text-[8px] uppercase tracking-widest"
+                  style={{ color: '#C53A1E', animation: 'bossWarn 1s ease-in-out infinite' }}>
+                  boss: {nextBossZone?.bossRequiredCharge}%+ required to defeat
+                </div>
+              )}
               {charge < 5 && !isCharging && (
-                <p className="text-xs font-mono tracking-widest" style={{ color: '#2d2b26' }}>— hold —</p>
+                <p className="text-[9px] font-mono tracking-widest" style={{ color: '#1e1a15' }}>— hold to charge —</p>
               )}
             </div>
           ) : (
-            <span className="font-serif italic text-border" style={{ fontSize: 'clamp(2.2rem, 10vw, 3rem)' }}>
+            <span className="font-serif italic" style={{ fontSize: 'clamp(2.2rem, 10vw, 3rem)', color: '#1e1a15' }}>
               Let it go →
             </span>
           )}

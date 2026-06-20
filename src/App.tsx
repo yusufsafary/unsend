@@ -3,6 +3,7 @@ import { LoginScreen } from "./pages/LoginScreen";
 import { ComposeScreen } from "./pages/ComposeScreen";
 import { ReleaseScreen } from "./pages/ReleaseScreen";
 import { StatsScreen } from "./pages/StatsScreen";
+import { MapScreen } from "./pages/MapScreen";
 import { Grain } from "./components/Grain";
 import { AchievementToast } from "./components/AchievementToast";
 import {
@@ -10,14 +11,20 @@ import {
   checkNewAchievements, isDailyCompleted,
   type GameState,
 } from "./lib/gameState";
+import {
+  loadAdventureState, saveAdventureState, getCurrentZone, getBossForCount,
+  getActiveQuests, checkQuestCompletions, addItemsToInventory,
+  type AdventureState, type Quest,
+} from "./lib/adventure";
 
 export type ShatterMode = 'default' | 'fire' | 'mirror' | 'slowmo' | 'vortex' | 'glitch';
+type View = 'login' | 'compose' | 'release' | 'stats' | 'map';
 
 function App() {
   const [user, setUser] = useState<string | null>(null);
   const [count, setCount] = useState(0);
   const [streak, setStreak] = useState(0);
-  const [view, setView] = useState<'login' | 'compose' | 'release' | 'stats'>('login');
+  const [view, setView] = useState<View>('login');
   const [message, setMessage] = useState('');
   const [chargeLevel, setChargeLevel] = useState(0);
   const [selectedMode, setSelectedMode] = useState<ShatterMode>('default');
@@ -25,16 +32,21 @@ function App() {
   const [messageLength, setMessageLength] = useState(0);
 
   const [gameState, setGameState] = useState<GameState>(loadGameState);
+  const [adventureState, setAdventureState] = useState<AdventureState>(loadAdventureState);
   const [pendingAchievements, setPendingAchievements] = useState<string[]>([]);
   const [pendingXP, setPendingXP] = useState<number | null>(null);
   const [pendingLevelUp, setPendingLevelUp] = useState<number | null>(null);
+  const [pendingQuestTitles, setPendingQuestTitles] = useState<string[]>([]);
   const [showToast, setShowToast] = useState(false);
   const [dailyUsed, setDailyUsed] = useState(false);
 
+  // Boss state for current release
+  const [bossForRelease, setBossForRelease] = useState<ReturnType<typeof getBossForCount>>(null);
+
   useEffect(() => {
-    const savedUser  = localStorage.getItem('unsend_user');
-    const savedCount = localStorage.getItem('unsend_count');
-    const savedMode  = localStorage.getItem('unsend_mode') as ShatterMode | null;
+    const savedUser   = localStorage.getItem('unsend_user');
+    const savedCount  = localStorage.getItem('unsend_count');
+    const savedMode   = localStorage.getItem('unsend_mode') as ShatterMode | null;
     const savedStreak = localStorage.getItem('unsend_streak');
     if (savedUser) { setUser(savedUser); setView('compose'); }
     if (savedCount) setCount(parseInt(savedCount, 10));
@@ -55,6 +67,11 @@ function App() {
   };
 
   const handleRelease = (msg: string, charge: number, isRage: boolean, msgLength: number) => {
+    // Check if next release (count+1) is a boss encounter
+    const nextCount = count + 1;
+    const boss = getBossForCount(nextCount);
+    setBossForRelease(boss);
+
     setMessage(msg);
     setChargeLevel(charge);
     setIsRageOnRelease(isRage);
@@ -67,6 +84,28 @@ function App() {
     localStorage.setItem('unsend_mode', mode);
   };
 
+  const handleUseItem = useCallback((itemId: string) => {
+    const EFFECT_MAP: Record<string, string> = {
+      rage_crystal: 'rage',
+      charge_amplifier: 'charge_speed',
+      echo_stone: 'double_frags',
+      void_shard: 'void',
+    };
+    setAdventureState(prev => {
+      if (!prev.inventory.includes(itemId)) return prev;
+      const effect = EFFECT_MAP[itemId] ?? '';
+      const alreadyActive = prev.activeItemEffects.includes(effect);
+      const next: AdventureState = {
+        ...prev,
+        activeItemEffects: alreadyActive
+          ? prev.activeItemEffects.filter(e => e !== effect)
+          : [...prev.activeItemEffects, effect],
+      };
+      saveAdventureState(next);
+      return next;
+    });
+  }, []);
+
   const handleReleaseComplete = useCallback(() => {
     const newCount = count + 1;
     setCount(newCount);
@@ -74,9 +113,9 @@ function App() {
 
     // Streak tracking
     const today = new Date().toISOString().slice(0, 10);
-    const lastDate  = localStorage.getItem('unsend_last_date');
-    const currentSt = parseInt(localStorage.getItem('unsend_streak') || '0', 10);
-    let newStreak   = currentSt;
+    const lastDate   = localStorage.getItem('unsend_last_date');
+    const currentSt  = parseInt(localStorage.getItem('unsend_streak') || '0', 10);
+    let newStreak    = currentSt;
     if (lastDate !== today) {
       const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
       newStreak = lastDate === yesterday ? currentSt + 1 : 1;
@@ -85,18 +124,60 @@ function App() {
       setStreak(newStreak);
     }
 
+    // Quest + boss resolution
+    let questXP = 0;
+    let completedQuestsList: Quest[] = [];
+    let newItemsFromQuests: string[] = [];
+
+    setAdventureState(prev => {
+      // Check quest completions
+      const active = getActiveQuests(prev.completedQuests, newCount);
+      const completed = checkQuestCompletions(active, {
+        count: newCount,
+        streak: newStreak,
+        mode: selectedMode,
+        isRage: isRageOnRelease,
+        charge: chargeLevel,
+        isDaily: dailyUsed,
+      });
+      completedQuestsList = completed;
+      questXP = completed.reduce((s, q) => s + q.reward.xp, 0);
+      const questItems = completed.flatMap(q => q.reward.item ? [q.reward.item] : []);
+      newItemsFromQuests = questItems;
+
+      // Boss defeat reward
+      const boss = getBossForCount(newCount);
+      const bossDefeated = boss !== null && chargeLevel >= boss.bossRequiredCharge;
+      const bossXPBonus = bossDefeated ? 200 : 0;
+      questXP += bossXPBonus;
+
+      const bossItem = bossDefeated ? (() => {
+        const bossItems = ['rage_crystal', 'charge_amplifier', 'echo_stone', 'void_shard'];
+        return bossItems[Math.min(Math.floor(newCount / 5) - 1, bossItems.length - 1)];
+      })() : null;
+      if (bossItem) newItemsFromQuests.push(bossItem);
+
+      const next: AdventureState = {
+        completedQuests: [...prev.completedQuests, ...completed.map(q => q.id)],
+        bossesDefeated: bossDefeated ? [...prev.bossesDefeated, newCount] : prev.bossesDefeated,
+        inventory: addItemsToInventory(prev.inventory, newItemsFromQuests),
+        activeItemEffects: [], // consumed after release
+      };
+      saveAdventureState(next);
+      return next;
+    });
+
     // XP / level / achievements
     setGameState(prev => {
-      const isFullCharge    = chargeLevel >= 95;
-      const isPerfectStorm  = isFullCharge && isRageOnRelease;
-      const wasDailyDone    = isDailyCompleted(prev);
+      const isFullCharge   = chargeLevel >= 95;
+      const isPerfectStorm = isFullCharge && isRageOnRelease;
+      const wasDailyDone   = isDailyCompleted(prev);
 
-      // Combo: within 60s window
       const now = Date.now();
       const withinWindow = (now - prev.lastReleaseTime) < 60000;
       const newCombo = withinWindow ? prev.comboCount + 1 : 1;
 
-      const xpGained = calcXPGain({
+      const xpBase = calcXPGain({
         chargeLevel,
         messageLength,
         streak: newStreak,
@@ -105,12 +186,12 @@ function App() {
         isDailyComplete: dailyUsed && !wasDailyDone,
         comboCount: newCombo,
       });
+      const xpGained = xpBase + questXP;
 
       const newXP    = prev.xp + xpGained;
       const newLevel = getLevelFromXP(newXP);
       const leveledUp = newLevel > prev.level;
 
-      // Daily challenge completion
       let newDailyCompleted = prev.dailyChallengesCompleted;
       let newLastDailyDate  = prev.lastDailyDate;
       if (dailyUsed && !wasDailyDone) {
@@ -136,23 +217,24 @@ function App() {
 
       saveGameState(next);
 
-      // Queue toast after state settles
       setTimeout(() => {
         setPendingXP(xpGained);
         if (leveledUp) setPendingLevelUp(newLevel);
         if (newAchs.length) setPendingAchievements(newAchs);
+        if (completedQuestsList.length) setPendingQuestTitles(completedQuestsList.map(q => q.title));
         setShowToast(true);
       }, 900);
 
       return next;
     });
-  }, [count, chargeLevel, isRageOnRelease, messageLength, dailyUsed]);
+  }, [count, chargeLevel, isRageOnRelease, messageLength, dailyUsed, selectedMode]);
 
   const handleCloseRelease = () => {
     setMessage('');
     setChargeLevel(0);
     setIsRageOnRelease(false);
     setDailyUsed(false);
+    setBossForRelease(null);
     setView('compose');
   };
 
@@ -161,7 +243,14 @@ function App() {
     setPendingXP(null);
     setPendingLevelUp(null);
     setPendingAchievements([]);
+    setPendingQuestTitles([]);
   };
+
+  // Derived adventure data for compose screen
+  const currentZone = getCurrentZone(selectedMode);
+  const isBossNext = (count + 1) > 0 && (count + 1) % 5 === 0;
+  const nextBossZone = isBossNext ? getBossForCount(count + 1) : null;
+  const activeQuestsList = getActiveQuests(adventureState.completedQuests, count);
 
   return (
     <>
@@ -174,11 +263,18 @@ function App() {
           streak={streak}
           selectedMode={selectedMode}
           gameState={gameState}
+          adventureState={adventureState}
+          currentZone={currentZone}
+          isBossNext={isBossNext}
+          nextBossZone={nextBossZone}
+          activeQuests={activeQuestsList}
           onModeChange={handleModeChange}
           onLogout={handleLogout}
           onRelease={handleRelease}
           onOpenStats={() => setView('stats')}
+          onOpenMap={() => setView('map')}
           onDailyUsed={() => setDailyUsed(true)}
+          onUseItem={handleUseItem}
         />
       )}
       {view === 'release' && (
@@ -187,6 +283,7 @@ function App() {
           message={message}
           chargeLevel={chargeLevel}
           mode={selectedMode}
+          bossZone={bossForRelease}
           onComplete={handleReleaseComplete}
           onClose={handleCloseRelease}
         />
@@ -199,11 +296,24 @@ function App() {
           onClose={() => setView('compose')}
         />
       )}
-      {showToast && (view === 'compose') && (
+      {view === 'map' && (
+        <MapScreen
+          count={count}
+          selectedMode={selectedMode}
+          adventureState={adventureState}
+          onClose={() => setView('compose')}
+          onSelectZone={(mode) => {
+            handleModeChange(mode);
+            setView('compose');
+          }}
+        />
+      )}
+      {showToast && view === 'compose' && (
         <AchievementToast
           achievementIds={pendingAchievements}
           xpGained={pendingXP ?? undefined}
           levelUp={pendingLevelUp}
+          questTitles={pendingQuestTitles}
           onDone={handleToastDone}
         />
       )}
