@@ -6,6 +6,11 @@ import { NavMenu } from '../components/NavMenu';
 import type { ShatterMode } from '../App';
 import { getXPProgress, getDailyPrompt, isDailyCompleted, type GameState } from '../lib/gameState';
 import { type AdventureState, type Zone, type Quest } from '../lib/adventure';
+import {
+  playTypeClick, playModeSelect, playModeUnlock,
+  startCharge, updateCharge, stopCharge,
+  startAmbient, stopAmbient,
+} from '../lib/audio';
 
 interface ComposeScreenProps {
   username: string;
@@ -27,20 +32,6 @@ interface ComposeScreenProps {
   onOpenHowToPlay: () => void;
   onDailyUsed: () => void;
   onUseItem: (itemId: string) => void;
-}
-
-function playTypeClick() {
-  try {
-    const ctx = new AudioContext();
-    const len = Math.floor(ctx.sampleRate * 0.007);
-    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 4) * 0.06;
-    const src = ctx.createBufferSource(); src.buffer = buf;
-    const g = ctx.createGain(); g.gain.value = 1;
-    src.connect(g); g.connect(ctx.destination); src.start();
-    setTimeout(() => ctx.close(), 200);
-  } catch { /* silence */ }
 }
 
 function haptic(pattern: number | number[]) {
@@ -108,10 +99,18 @@ export function ComposeScreen({
   const dailyPrompt = getDailyPrompt();
   const isDailyDone = isDailyCompleted(gameState);
 
+  // Zone ambient — start on mount and when mode changes
+  useEffect(() => {
+    startAmbient(selectedMode);
+    return () => stopAmbient();
+  }, [selectedMode]);
+
+  // Mode unlock toast
   useEffect(() => {
     const found = MODES.find(m => m.unlockAt === count);
     if (found && found.unlockAt > 0) {
       setUnlockToast(`${found.icon} ${found.label} unlocked — ${found.zoneName}`);
+      playModeUnlock(found.id as import('../App').ShatterMode);
       const t = setTimeout(() => setUnlockToast(null), 3500);
       return () => clearTimeout(t);
     }
@@ -120,6 +119,7 @@ export function ComposeScreen({
 
   const stopCharging = useCallback(() => {
     if (chargeTimer.current) { clearInterval(chargeTimer.current); chargeTimer.current = null; }
+    stopCharge();
     setIsCharging(false);
   }, []);
 
@@ -138,16 +138,18 @@ export function ComposeScreen({
     setIsCharging(true);
     chargeStart.current = Date.now();
     haptic([20]);
+    startCharge(selectedMode);
     const speedDivisor = hasChargeSpeed ? 1.1 : 2.2;
     chargeTimer.current = setInterval(() => {
       const raw = Math.min(((Date.now() - chargeStart.current) / 1000 / speedDivisor) * 100, 100);
       chargeRef.current = raw;
       setCharge(raw);
+      updateCharge(raw, selectedMode);
       if (raw >= 50 && raw < 51) haptic([30]);
       if (raw >= 80 && raw < 81) haptic([50, 20, 30]);
       if (raw >= 100) stopCharging();
     }, 16);
-  }, [isEnabled, released, stopCharging, hasChargeSpeed]);
+  }, [isEnabled, released, stopCharging, hasChargeSpeed, selectedMode]);
 
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     e.preventDefault();
@@ -386,7 +388,7 @@ export function ComposeScreen({
             )}
           </div>
           <textarea value={message}
-            onChange={e => { setMessage(e.target.value); playTypeClick(); }}
+            onChange={e => { setMessage(e.target.value); playTypeClick(selectedMode); }}
             placeholder="say what you never could."
             className="w-full flex-1 min-h-[130px] bg-transparent border-b pb-2 text-lg font-serif leading-relaxed outline-none transition-colors rounded-none resize-none"
             style={{
@@ -423,7 +425,7 @@ export function ComposeScreen({
               };
               return (
                 <button key={m.id}
-                  onClick={() => unlocked && onModeChange(m.id)}
+                  onClick={() => { if (unlocked) { playModeSelect(m.id); onModeChange(m.id); } }}
                   title={unlocked ? `${m.zoneName} — ${m.desc}` : `Unlocks at ${m.unlockAt} releases`}
                   disabled={!unlocked}
                   className="relative flex items-start gap-3 px-3 py-3 text-left transition-all"
