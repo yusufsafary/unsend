@@ -59,6 +59,7 @@ const MODE_CFG = {
     timeScale: 1.0, fragMult: 1, mirrorMode: false,
     closures: ['It is done.','The space is yours again.','No response needed.','Silence is an answer.','Let the ink dry.'],
     lightColor: 0xF2EFE9, flashColor: 0xC53A1E,
+    vortexMode: false, glitchMode: false,
   },
   fire: {
     fragColor: 0xFF6B1A, crackColor: 0xFF9500, bgColor: 0x0f0800,
@@ -67,6 +68,7 @@ const MODE_CFG = {
     timeScale: 1.15, fragMult: 1, mirrorMode: false,
     closures: ['Burned.','Ash and silence.','Nothing left to hold.','The heat is gone.','Consumed.'],
     lightColor: 0xFF8040, flashColor: 0xFF6600,
+    vortexMode: false, glitchMode: false,
   },
   mirror: {
     fragColor: 0xD8EDF5, crackColor: 0x7ab8d4, bgColor: 0x060c10,
@@ -75,6 +77,7 @@ const MODE_CFG = {
     timeScale: 0.9, fragMult: 1, mirrorMode: true,
     closures: ['Reflected.','Both sides gone.','The echo dissolves.','Symmetry broken.','Balanced, then nothing.'],
     lightColor: 0x90d0f0, flashColor: 0x7ab8d4,
+    vortexMode: false, glitchMode: false,
   },
   slowmo: {
     fragColor: 0xEDE8F5, crackColor: 0xb4a0d4, bgColor: 0x08050f,
@@ -83,6 +86,25 @@ const MODE_CFG = {
     timeScale: 0.28, fragMult: 1.6, mirrorMode: false,
     closures: ['Witnessed.','Every fragment, seen.','Slow and certain.','The moment stretches.','Held, then released.'],
     lightColor: 0xC8B8F0, flashColor: 0xb4a0d4,
+    vortexMode: false, glitchMode: false,
+  },
+  vortex: {
+    fragColor: 0xC0A8FF, crackColor: 0x8855FF, bgColor: 0x06030f,
+    particleColor: 0xAA88FF, particle2Color: 0x5533CC,
+    ashColor: 0x2a1f44, ashUp: false,
+    timeScale: 1.1, fragMult: 1.2, mirrorMode: false,
+    closures: ['Into the spiral.','The vortex takes it.','Drawn into nothing.','Spinning away.','Consumed by the current.'],
+    lightColor: 0xAA80FF, flashColor: 0x8855FF,
+    vortexMode: true, glitchMode: false,
+  },
+  glitch: {
+    fragColor: 0x88FFCC, crackColor: 0x00FF88, bgColor: 0x010a03,
+    particleColor: 0x00FF88, particle2Color: 0xFF0044,
+    ashColor: 0x003322, ashUp: false,
+    timeScale: 1.3, fragMult: 1, mirrorMode: false,
+    closures: ['Signal lost.','Data corrupted.','Transmission failed.','Error: message not found.','Memory cleared.'],
+    lightColor: 0x00FF88, flashColor: 0x00CC44,
+    vortexMode: false, glitchMode: true,
   },
 } as const;
 
@@ -91,7 +113,7 @@ function playCrackSound(intensity: number, mode: ShatterMode) {
   try {
     const ctx = new AudioContext();
     const vol = 0.3 + intensity * 0.007;
-    const pitchMult = mode === 'slowmo' ? 0.4 : mode === 'fire' ? 1.4 : 1.0;
+    const pitchMult = mode === 'slowmo' ? 0.4 : mode === 'fire' ? 1.4 : mode === 'glitch' ? 2.2 : 1.0;
 
     const bufLen = Math.floor(ctx.sampleRate * 0.15);
     const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
@@ -99,6 +121,8 @@ function playCrackSound(intensity: number, mode: ShatterMode) {
     for (let i = 0; i < bufLen; i++) {
       const t = i / bufLen;
       d[i] = (Math.random()*2-1) * Math.pow(1-t,2.5) * (1+Math.sin(i*pitchMult*0.12)) * vol;
+      // Glitch: add digital artifacts
+      if (mode === 'glitch' && Math.random() < 0.05) d[i] *= 3;
     }
     const src = ctx.createBufferSource(); src.buffer = buf;
     const hp = ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=300*pitchMult;
@@ -110,7 +134,7 @@ function playCrackSound(intensity: number, mode: ShatterMode) {
       const bl=Math.floor(ctx.sampleRate*0.5);
       const bb=ctx.createBuffer(1,bl,ctx.sampleRate);
       const bd=bb.getChannelData(0);
-      const bassFreq = mode==='slowmo' ? 30 : mode==='fire' ? 80 : 55;
+      const bassFreq = mode==='slowmo' ? 30 : mode==='fire' ? 80 : mode==='vortex' ? 45 : mode==='glitch' ? 120 : 55;
       for (let i=0;i<bl;i++) { const t=i/bl; bd[i]=Math.sin(2*Math.PI*bassFreq*(i/ctx.sampleRate))*Math.pow(1-t,1.8)*vol*0.7; }
       const bs=ctx.createBufferSource(); bs.buffer=bb;
       const bg=ctx.createGain(); bg.gain.setValueAtTime(vol*0.9,ctx.currentTime);
@@ -128,6 +152,8 @@ interface FragData {
   vx: number; vy: number; vz: number;
   rx: number; ry: number; rz: number;
   delay: number;
+  angularVel: number;   // for vortex spiral
+  col: number;          // column index for glitch
 }
 
 export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComplete, onClose }: ReleaseScreenProps) {
@@ -152,7 +178,7 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
   const nParticles = Math.round(180 + intensity * 2.0);
   const shakeStr = (0.08 + intensity * 0.002) * (mode === 'slowmo' ? 0.4 : 1);
   const baseSpd = (0.6 + intensity * 0.02) * cfg.timeScale;
-  const CRACK_DUR = (mode === 'slowmo' ? 1.8 : 0.5);
+  const CRACK_DUR = (mode === 'slowmo' ? 1.8 : mode === 'glitch' ? 0.3 : 0.5);
   const FALL_DUR = (mode === 'slowmo' ? 9 : 3.0) + intensity * 0.01;
   const userCracksRef = useRef<[number, number][][]>([]);
   const isDrawingRef = useRef(false);
@@ -176,7 +202,7 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
     container.appendChild(renderer.domElement);
 
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(cfg.bgColor, mode==='slowmo' ? 0.06 : 0.09);
+    scene.fog = new THREE.FogExp2(cfg.bgColor, mode==='slowmo' ? 0.06 : mode==='vortex' ? 0.07 : 0.09);
 
     const camera = new THREE.PerspectiveCamera(45, W/H, 0.1, 100);
     camera.position.set(0, 0, 9);
@@ -201,6 +227,26 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
       scene.add(emberLight);
     }
 
+    // Vortex: rotating point light
+    let vortexLight: THREE.PointLight | null = null;
+    if (mode === 'vortex') {
+      vortexLight = new THREE.PointLight(0x8855FF, 0, 10);
+      vortexLight.position.set(2, 0, 3);
+      scene.add(vortexLight);
+    }
+
+    // Glitch: RGB split lights
+    let glitchLightR: THREE.PointLight | null = null;
+    let glitchLightG: THREE.PointLight | null = null;
+    if (mode === 'glitch') {
+      glitchLightR = new THREE.PointLight(0xFF0044, 0, 8);
+      glitchLightR.position.set(-3, 0, 2);
+      scene.add(glitchLightR);
+      glitchLightG = new THREE.PointLight(0x00FF88, 0, 8);
+      glitchLightG.position.set(3, 0, 2);
+      scene.add(glitchLightG);
+    }
+
     // Mirror-mode: center line
     if (mode === 'mirror') {
       const lineGeo = new THREE.PlaneGeometry(0.008, 8);
@@ -210,19 +256,39 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
       scene.add(line);
     }
 
+    // Glitch: horizontal scan line mesh
+    let glitchScanLine: THREE.Mesh | null = null;
+    if (mode === 'glitch') {
+      const sg = new THREE.PlaneGeometry(12, 0.04);
+      const sm = new THREE.MeshBasicMaterial({ color: 0x00FF88, transparent: true, opacity: 0, blending: THREE.AdditiveBlending });
+      glitchScanLine = new THREE.Mesh(sg, sm);
+      glitchScanLine.position.set(0, 0, 0.1);
+      scene.add(glitchScanLine);
+    }
+
     // ── Message texture ──
     const tc = document.createElement('canvas');
     tc.width = 640; tc.height = 800;
     const tx = tc.getContext('2d')!;
-    tx.fillStyle = mode==='fire' ? '#1a0800' : mode==='mirror' ? '#060c10' : mode==='slowmo' ? '#08050f' : '#F2EFE9';
+    tx.fillStyle = mode==='fire' ? '#1a0800' : mode==='mirror' ? '#060c10' : mode==='slowmo' ? '#08050f'
+                 : mode==='vortex' ? '#06030f' : mode==='glitch' ? '#010a03' : '#F2EFE9';
     tx.fillRect(0, 0, 640, 800);
     for (let i=0;i<2000;i++) {
-      tx.fillStyle=`rgba(${mode==='fire'?'255,150,50':mode==='mirror'?'100,180,220':'200,200,200'},${Math.random()*0.025})`;
-      tx.fillRect(Math.random()*640, Math.random()*800, 1, 1);
+      const col = mode==='glitch' ? '0,255,136' : mode==='vortex' ? '160,128,255' : mode==='fire' ? '255,150,50' : mode==='mirror' ? '100,180,220' : '200,200,200';
+      tx.fillStyle=`rgba(${col},${Math.random()*0.025})`;
+      tx.fillRect(Math.random()*640, Math.random()*800, mode==='glitch' ? 2 : 1, 1);
     }
-    const textColor = mode==='fire' ? '#FF9500' : mode==='mirror' ? '#D8EDF5' : mode==='slowmo' ? '#EDE8F5' : '#16140F';
+    // Glitch: add scanlines on texture
+    if (mode === 'glitch') {
+      for (let y=0; y<800; y+=4) {
+        tx.fillStyle='rgba(0,0,0,0.15)';
+        tx.fillRect(0, y, 640, 1);
+      }
+    }
+    const textColor = mode==='fire' ? '#FF9500' : mode==='mirror' ? '#D8EDF5' : mode==='slowmo' ? '#EDE8F5'
+                    : mode==='vortex' ? '#C0A8FF' : mode==='glitch' ? '#00FF88' : '#16140F';
     tx.fillStyle = textColor;
-    tx.font = 'italic 500 24px "Newsreader", Georgia, serif';
+    tx.font = mode==='glitch' ? '500 22px "Courier New", monospace' : 'italic 500 24px "Newsreader", Georgia, serif';
     tx.textAlign = 'left';
     const words = message.split(' ');
     let line='', lines: string[]=[];
@@ -234,16 +300,30 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
     if (line) lines.push(line);
     const lh=40, tH=lines.length*lh, sy=(800-tH)/2+26;
     lines.forEach((l,i) => tx.fillText(l, 30, sy+i*lh));
-    const borderColor = mode==='fire'?'#552200':mode==='mirror'?'#1a3040':mode==='slowmo'?'#1a0f28':'#8C8473';
+    const borderColor = mode==='fire'?'#552200':mode==='mirror'?'#1a3040':mode==='slowmo'?'#1a0f28'
+                      : mode==='vortex'?'#2a1055':mode==='glitch'?'#00FF8855':'#8C8473';
     tx.strokeStyle=borderColor; tx.lineWidth=1; tx.strokeRect(16,16,608,768);
     const msgTex = new THREE.CanvasTexture(tc);
 
     // ── Voronoi fragments ──
     const PW=5.2, PH=6.8;
-    const rng = seededRandom(message.length*31 + chargeLevel + ['default','fire','mirror','slowmo'].indexOf(mode)*1000);
+    const modeIdx = ['default','fire','mirror','slowmo','vortex','glitch'].indexOf(mode);
+    const rng = seededRandom(message.length*31 + chargeLevel + modeIdx*1000);
     const bounds = [-PW/2,-PH/2,PW/2,PH/2];
     const sites: number[][] = [];
-    for (let i=0;i<nFrags;i++) sites.push([bounds[0]+rng()*PW, bounds[1]+rng()*PH]);
+
+    // Glitch: bias sites toward horizontal strips for column-like fragments
+    for (let i=0;i<nFrags;i++) {
+      if (mode === 'glitch') {
+        // Bias toward regular columns
+        const col = Math.floor(rng() * 6);
+        const x = bounds[0] + (col / 6) * PW + rng() * (PW / 8);
+        const y = bounds[1] + rng() * PH;
+        sites.push([x, y]);
+      } else {
+        sites.push([bounds[0]+rng()*PW, bounds[1]+rng()*PH]);
+      }
+    }
 
     const fragments: FragData[] = [];
     const fragColor = new THREE.Color(cfg.fragColor);
@@ -266,13 +346,15 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
         geo.computeVertexNormals();
         const mat = new THREE.MeshStandardMaterial({
           map: msgTex, color: fragColor,
-          roughness: 0.85, metalness: mode==='mirror'?0.3:0,
+          roughness: mode==='glitch' ? 0.2 : 0.85,
+          metalness: mode==='mirror' ? 0.3 : mode==='glitch' ? 0.6 : mode==='vortex' ? 0.2 : 0,
           side: THREE.DoubleSide,
-          transparent: mode==='mirror',
+          transparent: mode==='mirror' || mode==='glitch',
           opacity: mode==='mirror' ? 0.88 : 1,
-          blending: mode==='mirror' ? THREE.AdditiveBlending : THREE.NormalBlending,
+          blending: (mode==='mirror' || mode==='glitch') ? THREE.AdditiveBlending : THREE.NormalBlending,
         });
         if (mode==='fire') (mat as THREE.MeshStandardMaterial).emissive = new THREE.Color(0x220800);
+        if (mode==='vortex') (mat as THREE.MeshStandardMaterial).emissive = new THREE.Color(0x110033);
         const mesh = new THREE.Mesh(geo, mat);
         scene.add(mesh);
         return mesh;
@@ -280,22 +362,45 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
       const mesh = makeMesh(1);
       const mirrorMesh = cfg.mirrorMode ? makeMesh(-1) : undefined;
 
-      const angle = Math.atan2(cy,cx);
+      const angle = Math.atan2(cy, cx);
       const spd = baseSpd*(0.5+rng()*1.2);
+
+      // Glitch: column-based velocity (fragments in same column fly same horizontal direction)
+      let vx: number, vy: number;
+      if (mode === 'glitch') {
+        const colDir = cx > 0 ? 1 : cx < -1 ? -1 : Math.random() > 0.5 ? 1 : -1;
+        vx = colDir * (0.8 + rng() * 2.5);
+        vy = -(rng() * 1.5);
+      } else {
+        vx = Math.cos(angle)*spd*(0.5+rng())+( rng()-0.5)*0.8;
+        vy = Math.sin(angle)*spd*0.3-(0.6+rng()*2.2)*(intensity/65);
+      }
+
+      // Vortex: angular velocity (spiral)
+      const angularVel = mode === 'vortex' ? (rng() > 0.5 ? 1 : -1) * (0.8 + rng() * 1.5) : 0;
+
+      // Column index for glitch flickering
+      const col = Math.floor(((cx - bounds[0]) / PW) * 6);
+
       fragments.push({
         mesh, mirrorMesh, cx, cy,
-        vx: Math.cos(angle)*spd*(0.5+rng())+( rng()-0.5)*0.8,
-        vy: Math.sin(angle)*spd*0.3-(0.6+rng()*2.2)*(intensity/65),
+        vx, vy,
         vz: (rng()-0.5)*1.4,
         rx: (rng()-0.5)*0.13, ry: (rng()-0.5)*0.13, rz: (rng()-0.5)*0.09,
         delay: Math.sqrt(cx*cx+cy*cy)*0.06+rng()*0.04,
+        angularVel,
+        col,
       });
     }
 
     // ── Crack lines ──
     const crackMeshes: THREE.Mesh[] = [];
     const crackAngles = Array.from({length:9},(_,i)=>i*(Math.PI*2/9)+rng()*0.4);
-    crackAngles.forEach(a => {
+    // Glitch: horizontal/vertical crack pattern
+    const glitchCrackAngles = [0, Math.PI/2, Math.PI, 3*Math.PI/2, Math.PI/4, 3*Math.PI/4];
+    const angles = mode === 'glitch' ? glitchCrackAngles : crackAngles;
+
+    angles.forEach(a => {
       const len = 1.4+rng()*2.2;
       const seg = (x1:number,y1:number,x2:number,y2:number,w:number) => {
         const sl=Math.sqrt((x2-x1)**2+(y2-y1)**2);
@@ -318,9 +423,10 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
     for (let i=0;i<nParticles;i++) {
       pPos[i*3]=(rng()-0.5)*PW; pPos[i*3+1]=(rng()-0.5)*PH; pPos[i*3+2]=0.2;
       const a=rng()*Math.PI*2, spd=(0.4+rng()*5.5)*(intensity/60);
-      // Fire: emit upward; others: radial
       const upBias = mode==='fire' ? (1+rng()*2) : -(rng()*1.5);
-      pVel.push([Math.cos(a)*spd, Math.sin(a)*spd*0.4+upBias, (rng()-0.5)*2]);
+      // Vortex: spiral velocity
+      const vortexBias = mode==='vortex' ? (rng()-0.5)*3 : 0;
+      pVel.push([Math.cos(a)*spd + vortexBias, Math.sin(a)*spd*0.4+upBias, (rng()-0.5)*2]);
     }
     const pGeo=new THREE.BufferGeometry(); pGeo.setAttribute('position',new THREE.BufferAttribute(pPos.slice(),3));
     const pMat=new THREE.PointsMaterial({color:cfg.particleColor,size:0.055,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false});
@@ -338,10 +444,12 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
       ashPos[i*3]=(rng()-0.5)*10; ashPos[i*3+1]=startY; ashPos[i*3+2]=(rng()-0.5)*3;
       const drift = (rng()-0.5)*0.2;
       const yVel = cfg.ashUp ? (0.5+rng()*1.5) : -(0.2+rng()*0.5);
-      ashVel.push([drift, yVel, (rng()-0.5)*0.05]);
+      // Vortex ash: spirals
+      const vortexDrift = mode==='vortex' ? (rng()-0.5)*0.6 : drift;
+      ashVel.push([vortexDrift, yVel, (rng()-0.5)*0.05]);
     }
     const ashGeo=new THREE.BufferGeometry(); ashGeo.setAttribute('position',new THREE.BufferAttribute(ashPos,3));
-    const ashMat=new THREE.PointsMaterial({color:cfg.ashColor,size:mode==='fire'?0.055:0.04,transparent:true,opacity:0,blending:mode==='fire'?THREE.AdditiveBlending:THREE.NormalBlending,depthWrite:false});
+    const ashMat=new THREE.PointsMaterial({color:cfg.ashColor,size:mode==='fire'?0.055:mode==='glitch'?0.03:0.04,transparent:true,opacity:0,blending:mode==='fire'||mode==='glitch'?THREE.AdditiveBlending:THREE.NormalBlending,depthWrite:false});
     const ashPoints=new THREE.Points(ashGeo,ashMat);
     scene.add(ashPoints);
 
@@ -351,6 +459,11 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
     let phaseT=0, totalT=0, fallT=0;
     let shakeX=0, shakeY=0, shakeT=0, shakeActive=false;
     const oc = overlay.getContext('2d')!;
+
+    // Glitch state
+    let glitchTimer = 0;
+    let glitchOffset = 0;
+    let glitchActive = false;
 
     const triggerShatter = () => {
       if (phase !== 'drawing' && phase !== 'cracking') return;
@@ -370,14 +483,15 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
       for (const crack of userCracksRef.current) {
         if (crack.length<2) continue;
         oc.beginPath();
-        const col=mode==='fire'?'255,149,0':mode==='mirror'?'122,184,212':mode==='slowmo'?'180,160,212':'197,58,30';
+        const col=mode==='fire'?'255,149,0':mode==='mirror'?'122,184,212':mode==='slowmo'?'180,160,212'
+               :mode==='vortex'?'136,85,255':mode==='glitch'?'0,255,136':'197,58,30';
         oc.strokeStyle=`rgba(${col},0.8)`; oc.lineWidth=1.5; oc.shadowColor=`rgb(${col})`; oc.shadowBlur=7;
         oc.moveTo(crack[0][0],crack[0][1]);
         crack.forEach(p=>oc.lineTo(p[0],p[1])); oc.stroke();
       }
     };
     const onPD=(e:PointerEvent)=>{ if(phase!=='drawing')return; isDrawingRef.current=true; currentCrackRef.current=[getPos(e)]; setDrawHint(false); };
-    const onPM=(e:PointerEvent)=>{ if(!isDrawingRef.current||phase!=='drawing')return; currentCrackRef.current.push(getPos(e)); redrawCracks(); const cur=currentCrackRef.current; if(cur.length>1){oc.beginPath();const col=mode==='fire'?'255,149,0':mode==='mirror'?'122,184,212':mode==='slowmo'?'180,160,212':'197,58,30';oc.strokeStyle=`rgba(${col},0.9)`;oc.lineWidth=1.5;oc.shadowColor=`rgb(${col})`;oc.shadowBlur=9;oc.moveTo(cur[0][0],cur[0][1]);cur.forEach(p=>oc.lineTo(p[0],p[1]));oc.stroke();} };
+    const onPM=(e:PointerEvent)=>{ if(!isDrawingRef.current||phase!=='drawing')return; currentCrackRef.current.push(getPos(e)); redrawCracks(); const cur=currentCrackRef.current; if(cur.length>1){oc.beginPath();const col=mode==='fire'?'255,149,0':mode==='mirror'?'122,184,212':mode==='slowmo'?'180,160,212':mode==='vortex'?'136,85,255':mode==='glitch'?'0,255,136':'197,58,30';oc.strokeStyle=`rgba(${col},0.9)`;oc.lineWidth=1.5;oc.shadowColor=`rgb(${col})`;oc.shadowBlur=9;oc.moveTo(cur[0][0],cur[0][1]);cur.forEach(p=>oc.lineTo(p[0],p[1]));oc.stroke();} };
     const onPU=()=>{ if(!isDrawingRef.current)return; isDrawingRef.current=false; if(currentCrackRef.current.length>1)userCracksRef.current.push([...currentCrackRef.current]); currentCrackRef.current=[]; };
     overlay.addEventListener('pointerdown',onPD);
     overlay.addEventListener('pointermove',onPM);
@@ -390,17 +504,20 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
     const tick = (now: number) => {
       const rawDt = Math.min((now-lastNow)/1000, 0.05);
       lastNow = now;
-      // Time scaling per mode (slowmo scales physics, not frame rate)
       const dt = phase==='falling' || phase==='cracking' ? rawDt * cfg.timeScale : rawDt;
       totalT += rawDt; phaseT += dt;
 
       // Camera
       let camX=shakeX, camY=shakeY;
       if (mode==='slowmo' && phase==='falling') {
-        // Slow orbital camera
         camX += Math.sin(totalT*0.18)*1.8;
         camY += Math.cos(totalT*0.12)*0.6;
         camera.position.z = 8.5+Math.cos(totalT*0.1)*0.8;
+      } else if (mode==='vortex' && phase==='falling') {
+        // Slowly orbit
+        camX += Math.sin(totalT*0.3)*0.5;
+        camY += Math.cos(totalT*0.2)*0.3;
+        camera.position.z = 9-Math.sin(totalT*0.15)*0.4;
       } else {
         camera.position.z = 9-(0.8*Math.min(totalT/4,1));
       }
@@ -419,8 +536,39 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
         emberLight.position.y = -2+Math.sin(totalT*3)*0.5;
       }
 
+      // Vortex: rotating light
+      if (vortexLight && phase==='falling') {
+        vortexLight.intensity = Math.max(0, (3+Math.sin(totalT*8)*2)*(1-fallT/FALL_DUR));
+        vortexLight.position.x = Math.cos(totalT*2)*3;
+        vortexLight.position.y = Math.sin(totalT*2)*3;
+      }
+
+      // Glitch: RGB split lights flicker
+      if (glitchLightR && glitchLightG && phase==='falling') {
+        const fade = Math.max(0, 1-fallT/FALL_DUR);
+        glitchLightR.intensity = (Math.random() < 0.3 ? 3 : 0.5) * fade;
+        glitchLightG.intensity = (Math.random() < 0.3 ? 3 : 0.5) * fade;
+        glitchLightR.position.x = -3 + (Math.random()-0.5)*0.5;
+        glitchLightG.position.x = 3 + (Math.random()-0.5)*0.5;
+      }
+
+      // Glitch scanline
+      if (glitchScanLine && phase==='falling') {
+        const sm = glitchScanLine.material as THREE.MeshBasicMaterial;
+        sm.opacity = Math.random() < 0.15 ? 0.4 : 0;
+        glitchScanLine.position.y = (Math.random()-0.5)*8;
+      }
+
       // Drawing: gentle breath
-      if (phase==='drawing') fragments.forEach(f=>{ f.mesh.position.z=Math.sin(totalT*0.7+f.cx)*0.008; });
+      if (phase==='drawing') {
+        fragments.forEach(f=>{ f.mesh.position.z=Math.sin(totalT*0.7+f.cx)*0.008; });
+        // Glitch drawing: random pixel jitter on texture
+        if (mode==='glitch') {
+          fragments.forEach(f=>{
+            if(Math.random()<0.005) f.mesh.position.x=(Math.random()-0.5)*0.03;
+          });
+        }
+      }
 
       // Cracking
       if (phase==='cracking') {
@@ -435,6 +583,12 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
           const sh=prog*0.025;
           f.mesh.position.x=(Math.random()-0.5)*sh;
           f.mesh.position.y=(Math.random()-0.5)*sh;
+          // Glitch: more aggressive digital jitter during crack
+          if(mode==='glitch' && Math.random()<0.1) {
+            f.mesh.position.x += (Math.random()-0.5)*0.2;
+            const mat = f.mesh.material as THREE.MeshStandardMaterial;
+            mat.color.setHex(Math.random()<0.5 ? 0xFF0044 : 0x00FF88);
+          }
         });
         if (phaseT>=CRACK_DUR) {
           phase='falling'; phaseT=0; fallT=0;
@@ -444,7 +598,6 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
           playCrackSound(intensity, mode);
           setFlashOpacity(0.4+intensity*0.004);
           setTimeout(()=>setFlashOpacity(0),100);
-          // Fade overlay
           let oa=1;
           const fadeO=()=>{ oa-=0.08; oc.globalAlpha=Math.max(oa,0); oc.clearRect(0,0,W,H); if(oa>0)requestAnimationFrame(fadeO); };
           fadeO();
@@ -453,22 +606,58 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
 
       // Falling
       if (phase==='falling') {
-        fallT+=rawDt; // fallT always real-time for duration check
+        fallT+=rawDt;
         crackMeshes.forEach(m=>{ (m.material as THREE.MeshBasicMaterial).opacity*=0.93; });
         flashLight.intensity=Math.max(0,flashLight.intensity-rawDt*28);
         rimLight.intensity=Math.max(0,rimLight.intensity-rawDt*1.8);
 
+        // Glitch: global glitch intervals
+        glitchTimer += rawDt;
+        if (mode==='glitch') {
+          if (!glitchActive && Math.random() < 0.08) {
+            glitchActive = true;
+            glitchOffset = (Math.random()-0.5)*0.6;
+            setTimeout(()=>{ glitchActive=false; glitchOffset=0; }, 80+Math.random()*120);
+          }
+        }
+
         fragments.forEach(f=>{
           const ft=Math.max(0,fallT-f.delay)*(mode==='slowmo'?cfg.timeScale:1);
           if(ft<=0)return;
+
+          // Vortex: rotate velocity vector over time for spiral effect
+          if (mode==='vortex') {
+            const angle = f.angularVel * dt * 1.5;
+            const cosa=Math.cos(angle), sina=Math.sin(angle);
+            const nvx = f.vx*cosa - f.vy*sina;
+            const nvy = f.vx*sina + f.vy*cosa;
+            f.vx = nvx; f.vy = nvy;
+          }
+
           f.vy-=dt*(5.5+intensity*0.04);
           const burst=Math.max(0,1-ft*5)*0.25;
-          f.mesh.position.x=f.cx+f.vx*ft+f.cx*burst;
-          f.mesh.position.y=f.cy+f.vy*ft;
+
+          let posX = f.cx+f.vx*ft+f.cx*burst;
+          const posY = f.cy+f.vy*ft;
+
+          // Glitch: column-offset and random digital jitter
+          if (mode==='glitch') {
+            if (glitchActive && f.col % 2 === 0) posX += glitchOffset;
+            if (Math.random() < 0.03) posX += (Math.random()-0.5)*0.3;
+            // Color flicker
+            if (Math.random() < 0.05) {
+              const mat = f.mesh.material as THREE.MeshStandardMaterial;
+              mat.color.setHex([0xFF0044, 0x00FF88, 0x88FFCC, 0x0044FF][Math.floor(Math.random()*4)]);
+            }
+          }
+
+          f.mesh.position.x=posX;
+          f.mesh.position.y=posY;
           f.mesh.position.z=f.vz*ft;
           f.mesh.rotation.x+=f.rx*(1+ft*0.5);
           f.mesh.rotation.y+=f.ry*(1+ft*0.5);
           f.mesh.rotation.z+=f.rz;
+
           // Mirror: fly opposite direction
           if (f.mirrorMesh) {
             f.mirrorMesh.position.x=-(f.cx+f.vx*ft+f.cx*burst);
@@ -491,8 +680,17 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
         pMat2.opacity=fallT<1.8?Math.max(0,0.5*(1-fallT/1.6)):0;
         for(let i=0;i<nParticles;i++){
           const v=pVel[i];
+          // Vortex particles: rotate velocity
+          if (mode==='vortex') {
+            const a = 0.02*rawDt;
+            const nvx = v[0]*Math.cos(a)-v[1]*Math.sin(a);
+            const nvy = v[0]*Math.sin(a)+v[1]*Math.cos(a);
+            v[0]=nvx; v[1]=nvy;
+          }
           pA[i*3]+=v[0]*dt; pA[i*3+1]+=(v[1]-fallT*(mode==='fire'?-0.5:3.5))*dt; pA[i*3+2]+=v[2]*dt;
           pB[i*3]=pA[i*3]; pB[i*3+1]=pA[i*3+1]; pB[i*3+2]=pA[i*3+2];
+          // Glitch particles: jitter
+          if (mode==='glitch' && Math.random()<0.02) pA[i*3]+=(Math.random()-0.5)*0.5;
         }
         pGeo.attributes.position.needsUpdate=true;
         pGeo2.attributes.position.needsUpdate=true;
@@ -504,8 +702,9 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
           for(let i=0;i<ashCount;i++){
             const v=ashVel[i];
             arr[i*3]+=v[0]*rawDt+Math.sin(totalT*0.5+i)*0.0008;
+            // Vortex ash: spiral drift
+            if (mode==='vortex') arr[i*3]+=Math.sin(totalT*1.5+i*0.3)*0.003;
             arr[i*3+1]+=v[1]*rawDt;
-            // Wrap around
             if(cfg.ashUp&&arr[i*3+1]>6) arr[i*3+1]=-5-Math.random()*2;
             if(!cfg.ashUp&&arr[i*3+1]<-6) arr[i*3+1]=6+Math.random()*2;
           }
@@ -542,9 +741,14 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
           f.vz += (Math.random() - 0.5) * 2.5;
           f.rx += (Math.random() - 0.5) * 0.25;
           f.rz += (Math.random() - 0.5) * 0.2;
+          // Glitch: color flash on hit
+          if (mode==='glitch') {
+            const mat = f.mesh.material as THREE.MeshStandardMaterial;
+            mat.color.setHex(0xFF0044);
+            setTimeout(()=>mat.color.setHex(0x00FF88), 100);
+          }
         }
       });
-      // Flash light burst on hit
       if (hit > 0) { flashLight.intensity = 2 + hit * 0.4; }
     };
 
@@ -588,8 +792,10 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
     if(fn)fn();
   };
 
-  const modeAccent = mode==='fire'?'#FF9500':mode==='mirror'?'#7ab8d4':mode==='slowmo'?'#b4a0d4':'#C53A1E';
-  const modeLabel = mode==='fire'?'🔥 Fire':mode==='mirror'?'◎ Mirror':mode==='slowmo'?'◷ Slow-Mo':null;
+  const modeAccent = mode==='fire'?'#FF9500':mode==='mirror'?'#7ab8d4':mode==='slowmo'?'#b4a0d4'
+                   : mode==='vortex'?'#8855FF':mode==='glitch'?'#00FF88':'#C53A1E';
+  const modeLabel = mode==='fire'?'🔥 Fire':mode==='mirror'?'◎ Mirror':mode==='slowmo'?'◷ Slow-Mo'
+                  : mode==='vortex'?'◌ Vortex':mode==='glitch'?'▣ Glitch':null;
 
   return (
     <div className="fixed inset-0 z-50" style={{ background: `#${cfg.bgColor.toString(16).padStart(6,'0')}` }}>
@@ -625,7 +831,7 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
           {drawHint && (
             <p className="font-mono text-xs tracking-widest uppercase text-center"
               style={{color:'rgba(140,132,115,0.7)'}}>
-              trace the fracture
+              {mode==='glitch' ? 'corrupt the signal' : 'trace the fracture'}
             </p>
           )}
           <div className="flex gap-6 items-center">
@@ -635,7 +841,7 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
               onMouseEnter={e=>{e.currentTarget.style.color='#F2EFE9';e.currentTarget.style.borderColor=modeAccent;}}
               onMouseLeave={e=>{e.currentTarget.style.color='#8C8473';e.currentTarget.style.borderColor='#2a2820';}}
               data-testid="button-release-now">
-              Release now →
+              {mode==='glitch' ? 'Execute →' : mode==='vortex' ? 'Enter spiral →' : 'Release now →'}
             </button>
             {chargeLevel>0&&(
               <span className="font-mono text-xs" style={{color:chargeLevel>70?modeAccent:'#5C5547'}}>
@@ -661,15 +867,16 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
       {stage==='cracking' && (
         <div className="absolute inset-x-0 bottom-12 z-20 flex justify-center">
           <span className="font-mono text-xs tracking-[0.4em] uppercase"
-            style={{color:`rgba(${mode==='fire'?'255,149,0':mode==='mirror'?'122,184,212':mode==='slowmo'?'180,160,212':'197,58,30'},${0.5+intensity/200})`}}>
-            {intensity>70?'shattering':intensity>40?'dissolving':'fading'}
+            style={{color:`rgba(${mode==='fire'?'255,149,0':mode==='mirror'?'122,184,212':mode==='slowmo'?'180,160,212':mode==='vortex'?'136,85,255':mode==='glitch'?'0,255,136':'197,58,30'},${0.5+intensity/200})`}}>
+            {mode==='glitch'?'corrupting...':mode==='vortex'?'spiraling...':intensity>70?'shattering':intensity>40?'dissolving':'fading'}
           </span>
         </div>
       )}
 
       {/* Flash */}
       <div className="absolute inset-0 z-30 pointer-events-none"
-        style={{background:mode==='fire'?'#FF6600':mode==='mirror'?'#7ab8d4':mode==='slowmo'?'#b4a0d4':'#F2EFE9',
+        style={{background:mode==='fire'?'#FF6600':mode==='mirror'?'#7ab8d4':mode==='slowmo'?'#b4a0d4'
+               :mode==='vortex'?'#8855FF':mode==='glitch'?'#00FF88':'#F2EFE9',
           opacity:flashOpacity, transition:flashOpacity>0?'none':'opacity 0.15s ease-out'}} />
 
       {/* Closure */}
@@ -681,9 +888,10 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
             @keyframes fadeInUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
             @keyframes pulseModeAccent{0%,100%{opacity:0.2}50%{opacity:0.8}}
             @keyframes slideInLine{from{width:0}to{width:100%}}
+            @keyframes glitchText{0%,90%,100%{transform:none;opacity:1}92%{transform:translateX(3px);opacity:0.8}94%{transform:translateX(-3px);opacity:0.9}96%{transform:none}}
           `}</style>
 
-          {/* Top bar: issue number */}
+          {/* Top bar */}
           <div className="flex justify-between items-center pt-6 pb-6"
             style={{borderBottom:'1px solid #1a1815'}}>
             <span className="font-mono text-[10px] tracking-[0.3em] uppercase" style={{color:'#2a2820'}}>
@@ -694,16 +902,17 @@ export function ReleaseScreen({ releaseCount, message, chargeLevel, mode, onComp
             </span>
           </div>
 
-          {/* Main closure — fills the space */}
+          {/* Main closure */}
           <div className="flex-1 flex flex-col justify-center">
-            {/* Accent line */}
             <div style={{height:1, background:modeAccent, marginBottom:'2rem',
               animation:'slideInLine 0.9s 0.3s cubic-bezier(0.16,1,0.3,1) both', width:'100%'}} />
 
             <h2 className="font-serif italic leading-[1.0]"
               style={{fontSize:'clamp(2.4rem,10vw,4.2rem)',
-                color:mode==='fire'?'#FF9500':mode==='mirror'?'#D8EDF5':mode==='slowmo'?'#EDE8F5':'#F2EFE9',
-                letterSpacing:'-0.02em', marginBottom:'1.5rem'}}>
+                color:mode==='fire'?'#FF9500':mode==='mirror'?'#D8EDF5':mode==='slowmo'?'#EDE8F5'
+                     :mode==='vortex'?'#C0A8FF':mode==='glitch'?'#00FF88':'#F2EFE9',
+                letterSpacing:'-0.02em', marginBottom:'1.5rem',
+                animation: mode==='glitch' ? 'glitchText 3s ease 0.5s infinite' : undefined}}>
               {closureLine}
             </h2>
 
