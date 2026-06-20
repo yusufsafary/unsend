@@ -400,47 +400,81 @@ export function ComposeScreen({
         </section>
 
         {/* Mode selector */}
-        <section className="flex flex-col gap-2">
-          <label className="text-[9px] font-mono tracking-[0.35em] uppercase" style={{ color: '#3a3020' }}>
-            — choose your realm
-          </label>
-          <div className="grid grid-cols-3 gap-2">
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <label className="text-[9px] font-mono tracking-[0.35em] uppercase" style={{ color: '#3a3020' }}>
+              — choose your realm
+            </label>
+            <span className="font-mono text-[8px] uppercase tracking-widest" style={{ color: modeColor }}>
+              {MODES.find(m => m.id === selectedMode)?.zoneName}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
             {MODES.map(m => {
               const unlocked = count >= m.unlockAt;
               const active   = selectedMode === m.id;
+              const moods: Record<string, string> = {
+                default: 'Let go quietly',
+                fire:    'Burn it all',
+                mirror:  'Face the truth',
+                slowmo:  'Linger in it',
+                vortex:  'Spiral inward',
+                glitch:  'Corrupt the signal',
+              };
               return (
                 <button key={m.id}
                   onClick={() => unlocked && onModeChange(m.id)}
                   title={unlocked ? `${m.zoneName} — ${m.desc}` : `Unlocks at ${m.unlockAt} releases`}
                   disabled={!unlocked}
-                  className="flex flex-col items-center gap-1 py-2.5 transition-all"
+                  className="relative flex items-start gap-3 px-3 py-3 text-left transition-all"
                   style={{
-                    border: active ? `1px solid ${m.color}` : '1px solid #1e1a15',
-                    color: active ? m.color : unlocked ? '#5C5547' : '#1e1a15',
-                    cursor: unlocked ? 'pointer' : 'not-allowed',
-                    background: active ? `${m.color}10` : 'transparent',
+                    border: active ? `1px solid ${m.color}` : unlocked ? '1px solid #1e1a15' : '1px solid #120e0a',
+                    background: active ? `${m.color}12` : unlocked ? '#100c08' : '#0a0806',
+                    cursor: unlocked ? 'pointer' : 'default',
+                    minHeight: 68,
                   }}
                   data-testid={`mode-${m.id}`}
+                  onMouseEnter={e => { if (unlocked && !active) { e.currentTarget.style.background = '#181410'; e.currentTarget.style.borderColor = `${m.color}44`; } }}
+                  onMouseLeave={e => { if (unlocked && !active) { e.currentTarget.style.background = '#100c08'; e.currentTarget.style.borderColor = '#1e1a15'; } }}
                 >
-                  <span style={{ fontSize: 14, opacity: unlocked ? 1 : 0.3,
-                    filter: active ? `drop-shadow(0 0 4px ${m.color}88)` : 'none' }}>
+                  {/* Active accent bar */}
+                  {active && (
+                    <div style={{ position:'absolute', top:0, left:0, bottom:0, width:2,
+                      background: m.color, boxShadow:`0 0 8px ${m.color}88` }} />
+                  )}
+                  {/* Locked overlay */}
+                  {!unlocked && (
+                    <div className="absolute inset-0 flex items-end justify-end p-2" style={{ pointerEvents:'none' }}>
+                      <span className="font-mono text-[7px] uppercase tracking-widest"
+                        style={{ color:'#1e1a15' }}>
+                        at {m.unlockAt} →
+                      </span>
+                    </div>
+                  )}
+                  {/* Symbol */}
+                  <span style={{
+                    fontSize: 20, lineHeight: 1, flexShrink: 0,
+                    color: unlocked ? m.color : '#2a2418',
+                    filter: active ? `drop-shadow(0 0 7px ${m.color}bb)` : unlocked ? `drop-shadow(0 0 2px ${m.color}33)` : 'none',
+                    marginTop: 1,
+                  }}>
                     {m.icon}
                   </span>
-                  <span className="text-[8px] font-mono uppercase tracking-widest">{m.label}</span>
-                  {!unlocked && (
-                    <span className="text-[7px] font-mono italic" style={{ color: '#1e1a15' }}>
-                      at {m.unlockAt}
-                    </span>
-                  )}
+                  {/* Text */}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-mono text-[9px] uppercase tracking-[0.18em] mb-0.5"
+                      style={{ color: unlocked ? (active ? '#e8c89a' : '#5C5547') : '#2a2418' }}>
+                      {m.label}
+                    </div>
+                    <div className="font-serif italic text-[10px] leading-tight"
+                      style={{ color: unlocked ? (active ? `${m.color}bb` : '#3a3020') : '#1e1a15' }}>
+                      {moods[m.id]}
+                    </div>
+                  </div>
                 </button>
               );
             })}
           </div>
-          {selectedMode !== 'default' && (
-            <p className="text-[9px] font-mono" style={{ color: modeColor, opacity: 0.7 }}>
-              {MODES.find(m => m.id === selectedMode)?.desc}
-            </p>
-          )}
         </section>
 
         {/* Active Quest */}
@@ -488,14 +522,34 @@ export function ComposeScreen({
         <div className="pb-4 select-none">
           {isEnabled ? (
             <div className="flex flex-col gap-3">
-              <div className="w-full h-[1px] relative" style={{ background: '#1e1a15' }}>
-                <div className="absolute inset-y-0 left-0" style={{
+
+              {/* Charge bar — thick with glowing dot */}
+              <div className="w-full relative" style={{ height: 5, background: '#1a1510', borderRadius: 0 }}>
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, height: '100%',
                   width: `${charge}%`,
-                  background: charge > 80 ? '#ff3300' : modeColor,
+                  background: charge > 80
+                    ? `linear-gradient(to right, #C53A1E, #ff3300)`
+                    : `linear-gradient(to right, ${modeColor}88, ${modeColor})`,
                   transition: isCharging ? 'none' : 'width 0.3s ease-out',
-                  boxShadow: charge > 50 ? `0 0 ${charge / 10}px ${modeColor}cc` : 'none',
+                  boxShadow: charge > 30 ? `0 0 ${8 + charge / 8}px ${charge > 80 ? '#ff3300' : modeColor}88` : 'none',
                 }} />
+                {/* Glowing dot at end of bar */}
+                {charge > 3 && (
+                  <div style={{
+                    position: 'absolute', top: '50%',
+                    left: `${Math.min(charge, 99)}%`,
+                    transform: 'translate(-50%, -50%)',
+                    width: charge > 80 ? 8 : 6,
+                    height: charge > 80 ? 8 : 6,
+                    borderRadius: '50%',
+                    background: charge > 80 ? '#ff3300' : modeColor,
+                    boxShadow: `0 0 ${6 + charge / 8}px ${charge > 80 ? '#ff3300cc' : `${modeColor}cc`}`,
+                    transition: isCharging ? 'none' : 'left 0.3s ease-out',
+                  }} />
+                )}
               </div>
+
               <div className="flex justify-between items-center">
                 <span className="text-[9px] font-mono tracking-widest uppercase"
                   style={{ color: charge > 5 ? (charge > 80 ? '#ff3300' : modeColor) : chargeLabel.color }}>
@@ -503,44 +557,85 @@ export function ComposeScreen({
                   {hasChargeSpeed && charge < 5 ? ' — amplified' : ''}
                 </span>
                 {charge > 5 && (
-                  <span className="text-[9px] font-mono" style={{ color: modeColor }}>{Math.round(charge)}%</span>
+                  <span className="text-[9px] font-mono tabular-nums"
+                    style={{ color: charge > 80 ? '#ff3300' : modeColor }}>
+                    {Math.round(charge)}%
+                  </span>
                 )}
               </div>
-              <button
-                onPointerDown={handlePointerDown}
-                onPointerUp={handlePointerUp}
-                onPointerLeave={handlePointerUp}
-                onPointerCancel={handlePointerUp}
-                disabled={released}
-                className="text-left font-serif italic transition-all touch-none"
-                style={{
-                  fontSize: 'clamp(2.2rem, 10vw, 3rem)',
-                  color: charge > 5 ? (charge > 80 ? '#ff3300' : modeColor) : '#C53A1E',
-                  textShadow: charge > 50 ? `0 0 ${charge / 8}px ${modeColor}99` : 'none',
-                  opacity: released ? 0.4 : 1,
-                  cursor: released ? 'default' : 'pointer',
-                  userSelect: 'none',
-                  WebkitUserSelect: 'none',
-                  transform: highCharge ? `translateX(${(Math.random() - 0.5) * 3}px)` : 'none',
-                }}
-                data-testid="button-release"
-              >
-                {released ? 'releasing...' : charge > 80 ? 'RELEASE NOW →' : 'Let it go →'}
-              </button>
+
+              {/* Release button with ring effects */}
+              <div className="relative">
+                {/* Expanding rings when high charge */}
+                {isCharging && charge > 45 && (
+                  <>
+                    {[0, 1, 2].map(i => (
+                      <div key={i} style={{
+                        position: 'absolute',
+                        inset: -(8 + i * 10),
+                        borderRadius: 0,
+                        border: `1px solid ${charge > 80 ? '#ff3300' : modeColor}`,
+                        opacity: Math.max(0, ((charge - 45) / 55) * (0.35 - i * 0.1)),
+                        pointerEvents: 'none',
+                        transition: 'opacity 0.2s',
+                      }} />
+                    ))}
+                  </>
+                )}
+                <button
+                  onPointerDown={handlePointerDown}
+                  onPointerUp={handlePointerUp}
+                  onPointerLeave={handlePointerUp}
+                  onPointerCancel={handlePointerUp}
+                  disabled={released}
+                  className="text-left font-serif italic transition-all touch-none w-full"
+                  style={{
+                    fontSize: 'clamp(2.4rem, 10vw, 3.2rem)',
+                    color: charge > 5 ? (charge > 80 ? '#ff3300' : modeColor) : '#C53A1E',
+                    textShadow: charge > 40
+                      ? `0 0 ${8 + charge / 6}px ${charge > 80 ? '#ff3300' : modeColor}88`
+                      : charge > 0 ? `0 0 8px rgba(197,58,30,0.3)` : 'none',
+                    opacity: released ? 0.4 : 1,
+                    cursor: released ? 'default' : 'pointer',
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    letterSpacing: '-0.01em',
+                    transform: highCharge ? `translateX(${(Math.random() - 0.5) * 4}px)` : 'none',
+                    display: 'block',
+                  }}
+                  data-testid="button-release"
+                >
+                  {released
+                    ? 'releasing...'
+                    : charge > 80
+                      ? '◆ RELEASE NOW →'
+                      : charge > 0
+                        ? 'Let it go →'
+                        : 'Let it go →'}
+                </button>
+              </div>
+
               {isBossNext && charge > 0 && (
                 <div className="font-mono text-[8px] uppercase tracking-widest"
                   style={{ color: '#C53A1E', animation: 'bossWarn 1s ease-in-out infinite' }}>
-                  boss: {nextBossZone?.bossRequiredCharge}%+ required to defeat
+                  boss: charge {nextBossZone?.bossRequiredCharge}%+ to defeat
                 </div>
               )}
               {charge < 5 && !isCharging && (
-                <p className="text-[9px] font-mono tracking-widest" style={{ color: '#1e1a15' }}>— hold to charge —</p>
+                <p className="text-[9px] font-mono tracking-[0.4em] uppercase"
+                  style={{ color: '#1e1a15' }}>
+                  — hold to charge —
+                </p>
               )}
             </div>
           ) : (
-            <span className="font-serif italic" style={{ fontSize: 'clamp(2.2rem, 10vw, 3rem)', color: '#1e1a15' }}>
-              Let it go →
-            </span>
+            <div className="flex flex-col gap-2">
+              <div className="w-full" style={{ height: 1, background: '#120e0a' }} />
+              <span className="font-serif italic"
+                style={{ fontSize: 'clamp(2.4rem, 10vw, 3.2rem)', color: '#1e1a15' }}>
+                Let it go →
+              </span>
+            </div>
           )}
         </div>
       </main>
