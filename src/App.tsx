@@ -266,6 +266,7 @@ function App() {
           chargeLevel={chargeLevel}
           mode={selectedMode}
           bossZone={bossForRelease}
+          activeItemEffects={adventureState.activeItemEffects}
           onComplete={handleReleaseComplete}
           onClose={handleCloseRelease}
         />
