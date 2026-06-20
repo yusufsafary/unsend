@@ -46,6 +46,38 @@
   --taupe: #8C8473;
 }
 
+@keyframes grain {
+  0%,100% { transform: translate(0, 0)     }
+  10%      { transform: translate(-1%, -2%) }
+  20%      { transform: translate(2%, 1%)   }
+  30%      { transform: translate(-2%, 3%)  }
+  40%      { transform: translate(3%, -1%)  }
+  50%      { transform: translate(-1%, 2%)  }
+  60%      { transform: translate(2%, -3%)  }
+  70%      { transform: translate(-3%, 1%)  }
+  80%      { transform: translate(1%, -2%)  }
+  90%      { transform: translate(-2%, 1%)  }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 0.7; transform: scaleX(1); }
+  50%       { opacity: 1;   transform: scaleX(1.04); }
+}
+
+@keyframes drift {
+  0%   { transform: translateY(0px) translateX(0px); }
+  33%  { transform: translateY(-6px) translateX(2px); }
+  66%  { transform: translateY(3px) translateX(-2px); }
+  100% { transform: translateY(0px) translateX(0px); }
+}
+
+@keyframes flicker {
+  0%, 95%, 100% { opacity: 1; }
+  96%            { opacity: 0.85; }
+  97%            { opacity: 1; }
+  98%            { opacity: 0.9; }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring;
@@ -54,6 +86,7 @@
   
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    animation: flicker 8s ease-in-out infinite;
   }
 
   ::selection {
